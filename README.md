@@ -64,18 +64,20 @@ $ python -u fengwu_ghr_demo.py --timestamp=2023-06-01T00:00:00 --config=config/f
 $ python -u fengwu_ghr_demo.py --help
 ```
 
-Reminder: After runing this script, the forecast results will be saved as `netcdf` format in `data/output/${timestamp}`. Feel free to change the  `inference_steps` and `save_cfg` in `./config/fengwu_ghr_cfg.py` for rollout length and saved variables.  
+Reminder: After runing this script, the forecast results will be saved as `netcdf` format in `data/output/${timestamp}`. Feel free to change the  `inference_steps` and `save_cfg` in [fengwu_ghr_cfg.py](./config/fengwu_ghr_cfg.py) for rollout length and saved variables.  
 ```
 inference_steps = 40 # one step is 6 hour interval
 save_cfg = dict(
     save_path='./data/output' ,   
-    variables_list =['z_1000','z_850','z_500','z_100','z_50',
-                            'q_1000','q_850','q_500','q_100','q_50',
-                            'u_1000','u_850','u_500','u_100','u_50',
-                            'v_1000','v_850','v_500','v_100','v_50',
-                            't_1000','t_850','t_500','t_100','t_50',
-                            'v10','u10','v100', 'u100', 't2m','tcc', 'sp','tp6h', 'msl']
-                )
+    variables_list =[
+        'z_1000','z_850','z_500','z_100','z_50',
+        'q_1000','q_850','q_500','q_100','q_50',
+        'u_1000','u_850','u_500','u_100','u_50',
+        'v_1000','v_850','v_500','v_100','v_50',
+        't_1000','t_850','t_500','t_100','t_50',
+        'v10','u10','v100', 'u100', 't2m','tcc', 'sp','tp6h', 'msl'
+        ]
+    )
 ```
 ## Notes
 1. This demo is runing under the given input samples. If you want to inference under the forcing of other initial fields, please download them from [ERA5 pressure-level dataset](https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-pressure-levels) and [ERA5 single-level dataset](https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-single-levels?tab=overview).
