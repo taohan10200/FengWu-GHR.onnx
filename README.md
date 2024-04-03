@@ -107,10 +107,10 @@ Here is the 10-days lead forecast demos after running above script:
 
 
 
-## License 
-!!! The copyright of this project belongs to [Shanghai Artificial Intelligence Laboratory](https://www.shlab.org.cn/), and the commercial use of these models is strictly forbidden.
+## License and attribution 
+The copyright of this project belongs to [Shanghai Artificial Intelligence Laboratory](https://www.shlab.org.cn/), and the commercial use of these models is forbidden.
 
-License and attribution
+
 The code are licensed under the Apache License, Version 2.0. You may obtain a copy of the License at: https://www.apache.org/licenses/LICENSE-2.0.
 
 The model weights are made available for use under the terms of the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0). You may obtain a copy of the License at: https://creativecommons.org/licenses/by-nc-sa/4.0/.
