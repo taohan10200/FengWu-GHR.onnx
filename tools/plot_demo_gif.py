@@ -29,8 +29,7 @@ def compress_gif(input_file, output_file, optimization_level=3):
 
 def plot_pressure_demo_gif(initial_timestamp:str, steps: int, plot_variable:dict):
     
-    # 创建存储图像的列表
-    images = {}
+    images = {}     # creat a dict to store images
     for step in range(steps): 
         new_dt = datetime.fromisoformat(initial_timestamp) + timedelta(hours=6*(step+1))
         fc_timestamp = new_dt.isoformat()
@@ -54,7 +53,6 @@ def plot_pressure_demo_gif(initial_timestamp:str, steps: int, plot_variable:dict
         vnames = forecast_dataset.data_vars.keys()
         fontsize = 24
         for vname in vnames:
-            # 获取预测和真实的大气场数据
             fig_list = []  # Create a list to store the figures for each vname
             forecast_data = forecast_dataset[vname]
             heights = forecast_data.isobaricInhPa.data
@@ -69,7 +67,7 @@ def plot_pressure_demo_gif(initial_timestamp:str, steps: int, plot_variable:dict
                 fc_data= forecast_data.sel(isobaricInhPa=height).values.squeeze()  # 绘制预测和真实的大气场图像
                 real_data = real_dataset[vname].sel(isobaricInhPa=height).values.squeeze()
 
-                print(f'{key}:{fc_timestamp}:{np.square(fc_data-real_data).mean().sqrt()}')
+                print(f'{key}:{fc_timestamp}:{np.sqrt(np.square(fc_data-real_data).mean())}')
                 aspect_ratio = fc_data.shape[1] / fc_data.shape[0]  # Calculate the aspect ratio of the image
                 fig_width = 12  # Set the desired width of the figure
                 fig_height = fig_width / aspect_ratio # Calculate the height of the figure based on the aspect rat
@@ -122,8 +120,8 @@ def plot_pressure_demo_gif(initial_timestamp:str, steps: int, plot_variable:dict
         
 def plot_surface_demo_gif(initial_timestamp:str, steps: int, plot_variable:list):
     
-    # 创建存储图像的列表
-    images = []
+
+    images = []     # creat a list to store images
     for step in range(steps): 
         new_dt = datetime.fromisoformat(initial_timestamp) + timedelta(hours=6*(step+1))
         fc_timestamp = new_dt.isoformat()
@@ -145,8 +143,6 @@ def plot_surface_demo_gif(initial_timestamp:str, steps: int, plot_variable:list)
             real_data = np.load(
                 f'./data/input/era5/{fc_timestamp}/{vname}.npy', 
                 )
-            
-            # 获取预测和真实的大气场数据
 
             fc_data = forecast_dataset[vname].values.squeeze() 
             if vname not in plot_variable:
@@ -155,7 +151,7 @@ def plot_surface_demo_gif(initial_timestamp:str, steps: int, plot_variable:list)
             key= f'{vname}'
  
 
-            print(f'{key}:{fc_timestamp}:{np.square(fc_data-real_data).mean().sqrt()}')
+            print(f'{key}:{fc_timestamp}:{np.sqrt(np.square(fc_data-real_data).mean())}')
             aspect_ratio = fc_data.shape[1] / fc_data.shape[0]  # Calculate the aspect ratio of the image
             fig_width = 12  # Set the desired width of the figure
             fig_height = fig_width / aspect_ratio # Calculate the height of the figure based on the aspect rat
@@ -192,31 +188,29 @@ def plot_surface_demo_gif(initial_timestamp:str, steps: int, plot_variable:list)
             
             fig_list.append(fig_to_image(fig))
             plt.close()
-            # import pdb
-            # pdb.set_trace()   
-           
+
         # Stack the images vertically using numpy.vstack()
         stacked_image = np.vstack(np.array(fig_list))
         images.append(stacked_image)
                     
    
-    # 生成 GIF 图片
+    # generate GIF image
     os.makedirs(f'./data/demos/',exist_ok=True)
     save_path = f'./data/demos/surface_forecast_vs_real.gif'
     imageio.mimsave(save_path, images, fps=2)
     # compress_gif(save_path,save_path)
 
 if __name__ == "__main__":
-    plot_pressure_demo_gif(initial_timestamp='2023-06-01T00:00:00', 
-                  steps=20, 
-                  plot_variable={'z':[850,500],
-                                 'q':[850,500],
-                                 'u':[850,500],
-                                 'v':[850,500],
-                                 't':[850,500],
-                                 }
-                    )
+    # plot_pressure_demo_gif(initial_timestamp='2023-06-01T00:00:00', 
+    #               steps=20, 
+    #               plot_variable={'z':[850,500],
+    #                              'q':[850,500],
+    #                              'u':[850,500],
+    #                              'v':[850,500],
+    #                              't':[850,500],
+    #                              }
+    #                 )
     plot_surface_demo_gif(initial_timestamp='2023-06-01T00:00:00', 
                   steps=20, 
-                  plot_variable=['v10','v100', 't2m', 'sp','tp6h', 'msl']
+                  plot_variable=['sp','v10','v100', 't2m','tp6h', 'msl']
                                 )

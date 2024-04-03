@@ -3,14 +3,15 @@ from threading import Lock
 import psutil
 import os
 import torch
+import pynvml
+
 def get_mem_info():
     """
-    根据显卡 id 获取显存使用信息, 单位 MB
-    :param gpu_id: 显卡 ID
-    :return: total 所有的显存，used 当前使用的显存, free 可使用的显存
+    Get GPU memory usage information based on the GPU ID, in MB units.
+    :param gpu_id: GPU ID
+    :return: total - total GPU memory, used - currently used GPU memory, free - available GPU memory
     """
     gpu_id = int(os.environ.get('CUDA_VISIBLE_DEVICES', torch.cuda.current_device()))
-    import pynvml
     pynvml.nvmlInit()
     
     if torch.cuda.is_available():
