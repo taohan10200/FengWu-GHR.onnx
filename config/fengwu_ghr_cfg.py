@@ -23,15 +23,16 @@ pressure_level = [1000.,  925.,  850.,  700.,    600.,   500.,   400.,
 
 inference_steps = 40 # one step is 6 hour interval
 save_cfg = dict(
-                s3_cfg =dict(                         # This is for internal use, you can ignore it.
-                    internal_ak_sk = 'ai4earth',
-                    bucket_name='nwp_predictions',
-                    endpoint='http://10.140.31.254'),
-                save_path='./data/output' ,   
-                variables_list =['z_1000','z_850','z_500','z_100','z_50',
-                                        'q_1000','q_850','q_500','q_100','q_50',
-                                        'u_1000','u_850','u_500','u_100','u_50',
-                                        'v_1000','v_850','v_500','v_100','v_50',
-                                        't_1000','t_850','t_500','t_100','t_50',
-                                        'v10','u10','v100', 'u100', 't2m','tcc', 'sp','tp6h', 'msl']
-                )
+    s3_cfg =dict(                         # This is for internal use, you can ignore it.
+        internal_ak_sk = 'ai4earth',
+        bucket_name='nwp_predictions',
+        endpoint='http://10.140.31.254'),
+    save_path='./data/output' ,   
+    variables_list =[
+        'z_1000','z_850','z_500','z_100','z_50',
+        'q_1000','q_850','q_500','q_100','q_50',
+        'u_1000','u_850','u_500','u_100','u_50',
+        'v_1000','v_850','v_500','v_100','v_50',
+        't_1000','t_850','t_500','t_100','t_50',
+        'v10','u10','v100', 'u100', 't2m','tcc', 'sp','tp6h', 'msl']
+    )

@@ -9,7 +9,7 @@ Download onnx models here:
 
 | Model |Resolution | Precision | Size | URL | Demo |
 | :-: | :-: | :-: |:-: | :-: | :-: |
-| FengWu-GHR (Meta model)| 721x1440| fp16 | 18GB | [Onedrive](https://pjlab-my.sharepoint.cn/:f:/g/personal/hantao_dispatch_pjlab_org_cn/EkMzQtj__wFLgyPIdAQ2DDUB-wsNhGQ80lTGX5SI20fi7w?e=MHJaRb) | [fengwu_ghr_demo.py](./fengwu_ghr_demo.py) |
+| FengWu-GHR (Meta model)| 721x1440| fp16 | 9GB | [Onedrive](https://pjlab-my.sharepoint.cn/:f:/g/personal/hantao_dispatch_pjlab_org_cn/EkMzQtj__wFLgyPIdAQ2DDUB-wsNhGQ80lTGX5SI20fi7w?e=MHJaRb) | [fengwu_ghr_demo.py](./fengwu_ghr_demo.py) |
 | FengWu-GHR (full model) |  2001x4000 | - |- |- | - |
 
 
