@@ -1,9 +1,9 @@
 # FengWu-GHR onnx
-FengWu-GHR: Learning the Kilometer-scale Medium-range Global Weather Forecasting, arXiv preprint: 2402.00059, 2023. https://arxiv.org/abs/2402.00059.
+## :rocket: FengWu-GHR: Learning the Kilometer-scale Medium-range Global Weather Forecasting, arXiv preprint: 2402.00059, 2023. https://arxiv.org/abs/2402.00059.
 
 
 
-## :rocket:
+
 
 Download onnx models here:
 
