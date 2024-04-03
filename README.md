@@ -73,7 +73,7 @@ $ python -u fengwu_ghr_demo.py --help
 
 ## Demos
 Here is the 10-days lead forecast demos after running above script:
-### Demo 1: Surface Variables
+### Demo 1: Surface Variables: `10 mete wind (v10), 100 meter wind (v100), 2 meter temperature (t2m), surface pressure (sp), 6-hour precipitation (tp6h), mean sea-level pressure (msl)`
 ![surface](./data/demos/surface_forecast_vs_real.gif)
 
 ### Demo 1: Geopotential
