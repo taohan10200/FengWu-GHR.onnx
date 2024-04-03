@@ -112,9 +112,15 @@ class FengWu_GHR_Inference:
 
     def read_initial_field(self, timestamp):
         input_initial_field=[]
-        pressure_data = xr.open_dataset(f'./data/input/era5/{timestamp}.grib', 
+        try:
+            pressure_data = xr.open_dataset(f'./data/input/era5/{timestamp}.grib', 
                                         engine='cfgrib',
                                         backend_kwargs={'indexpath': ''})
+        except Exception as e:
+            print("An error occurred:", e)
+            raise SystemExit("Program terminated due to an error.")
+      
+
         for vname in self.cfg.vnames.get('pressure'):
             vname_data = pressure_data[vname]
             for height in self.cfg.pressure_level:
@@ -122,7 +128,11 @@ class FengWu_GHR_Inference:
                 input_initial_field.append(data[None,:,:])
 
         for vname in self.cfg.vnames.get('single'):
-            data = np.load(f'./data/input/era5/{timestamp}/{vname}.npy')
+            try:
+                data = np.load(f'./data/input/era5/{timestamp}/{vname}.npy')
+            except Exception as e:
+                print("An error occurred:", e)
+                raise SystemExit("Program terminated due to an error.")
             if vname == 'tp':
                 data =  data*1000  # if the unit is meter, please transfer it to millmeter
             input_initial_field.append(data[None,:,:])
@@ -162,10 +172,17 @@ def parse_args():
                         help='inference config file path')
     
     parser.add_argument('--onnxdir',
-                        default='onnx/fengwu_ghr/onnx_dir',
+                        default='onnx/fengwu_ghr/meta_model',
                         type=str,
-                        help='fengwu-ghr 7B onnx model directory.')
-    
+                        help='fengwu-ghr onnx model directory.')
+    parser.add_argument('--poolsize',
+                        default=None,
+                        type=int,
+                        help='The size of cpu/gpu memory allocated for inference.')
+    parser.add_argument('--timestamp',
+                        default='2023-06-01T00:00:00',
+                        type=str,
+                        help='The timestamp of the initial field.')
     parser.add_argument(
     '--cfg-options',
     nargs='+',
@@ -185,7 +202,9 @@ def main():
     cfg = Config.fromfile(args.config)
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
-        
+    if args.poolsize is not None:
+        cfg.poolsize_GB = args.poolsize
+         
     logger.warning(args)
     FengWu_GHR = FengWu_GHR_Inference(
                     cfg=cfg
@@ -195,8 +214,8 @@ def main():
     data = np.ones((1,74, 721, 1440)).astype(np.float16)
     # data = np.random.rand(1,7200, 3072).astype(np.float16)
     
-    FengWu_GHR.inference('2023-06-01T00:00:00', np.array(0, dtype=np.int64))
-    
+    FengWu_GHR.inference(args.timestamp, np.array(0, dtype=np.int64))
+
 
 if __name__ == '__main__':
     main()

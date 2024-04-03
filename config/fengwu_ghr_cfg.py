@@ -1,10 +1,10 @@
-onnx_dir = 'onnx/fengwu_ghr/onnx_dir/'
+onnx_dir = 'onnx/fengwu_ghr/meta_model/'
 onnx_keys = ['encoder'] + [f'block_{i}' for i in range(0,30)]  + ['decoder'] #['encoder'] + 
 poolsize_GB = 72     #'onnxruntime memory pool size. default value is 32GB'
 temperature = 0.1    #'factor to scale up logits, 1.0 means no warp. use `0.1` by default.')
 topk = 40             # 'filter k high score values from logits, None means no filter. 40 by default.'
 fp16 = True           #'enable fp16 inference, default True.'
-inference_steps = 40 # one step is 6 hour interval
+
 
 total_levels= [1000.,  975.,  950.,  925.,  900.,  875.,  850.,  825.,  800.,
  775.,  750.,  700.,  650.,  600.,  550.,  500.,  450.,  400.,
@@ -21,10 +21,9 @@ pressure_level = [1000.,  925.,  850.,  700.,    600.,   500.,   400.,
                   300.,  250.,    200.,   150.,    100.,
                   50.]
 
-
+inference_steps = 40 # one step is 6 hour interval
 save_cfg = dict(
-
-                s3_cfg =dict(
+                s3_cfg =dict(                         # This is for internal use, you can ignore it.
                     internal_ak_sk = 'ai4earth',
                     bucket_name='nwp_predictions',
                     endpoint='http://10.140.31.254'),

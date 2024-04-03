@@ -55,13 +55,27 @@ $ FengWu-GHR.onnx/
 ```
 ### 4. Run the inference and demos script
 ```bash
-$ python -u fengwu_ghr_demo.py --config=config/fengwu_ghr_cfg.py 
+$ python -u fengwu_ghr_demo.py --timestamp=2023-06-01T00:00:00 --config=config/fengwu_ghr_cfg.py 
 ..
 # If you only have 10 GB memory, use `--poolsize`
-$ python -u fengwu_ghr_demo.py --config=config/fengwu_ghr_cfg.py  --poolsize 10
+$ python -u fengwu_ghr_demo.py --timestamp=2023-06-01T00:00:00 --config=config/fengwu_ghr_cfg.py  --poolsize 10
 ..
 # Try more options
 $ python -u fengwu_ghr_demo.py --help
+```
+
+Reminder: After runing this script, the forecast results will be saved as `netcdf` format in `data/output/${timestamp}`. Feel free to change the  `inference_steps` and `save_cfg` in `./config/fengwu_ghr_cfg.py` for rollout length and saved variables.  
+```
+inference_steps = 40 # one step is 6 hour interval
+save_cfg = dict(
+    save_path='./data/output' ,   
+    variables_list =['z_1000','z_850','z_500','z_100','z_50',
+                            'q_1000','q_850','q_500','q_100','q_50',
+                            'u_1000','u_850','u_500','u_100','u_50',
+                            'v_1000','v_850','v_500','v_100','v_50',
+                            't_1000','t_850','t_500','t_100','t_50',
+                            'v10','u10','v100', 'u100', 't2m','tcc', 'sp','tp6h', 'msl']
+                )
 ```
 ## Notes
 1. This demo is runing under the given input samples. If you want to inference under the forcing of other initial fields, please download them from [ERA5 pressure-level dataset](https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-pressure-levels) and [ERA5 single-level dataset](https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-single-levels?tab=overview).
@@ -77,20 +91,20 @@ The following are demos of 10-days lead forecasting after running above script:
 ### Demo 1: Some Surface Variables: `10 mete wind (v10), 100 meter wind (v100), 2 meter temperature (t2m), surface pressure (sp), 6-hour precipitation (tp6h), mean sea-level pressure (msl)`
 ![surface](./data/demos/surface_forecast_vs_real.gif)
 
-### Demo 1: Geopotential
+### Demo 2: Geopotential
 ![z](./data/demos/z_forecast_vs_real.gif)
 
-### Demo 2: Specific Humidity
+### Demo 3: Specific Humidity
 ![q](./data/demos/q_forecast_vs_real.gif)
 
-### Demo 3: U Component of Wind
+### Demo 4: U Component of Wind
 ![u_wind](./data/demos/u_forecast_vs_real.gif)
 
 
-### Demo 4: V Component of Wind
+### Demo 5: V Component of Wind
 ![v_wind](./data/demos/v_forecast_vs_real.gif)
 
-### Demo 5: Temperature
+### Demo 6: Temperature
 ![t](./data/demos/t_forecast_vs_real.gif)
 
 
