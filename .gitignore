@@ -1,0 +1,5 @@
+__pycache__
+*onnx
+*data/input
+*data/output
+*data/script
