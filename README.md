@@ -9,7 +9,7 @@ Download onnx models here:
 
 | Model |Resolution | Precision | Size | URL | Demo |
 | :-: | :-: | :-: |:-: | :-: | :-: |
-| FengWu-GHR (Meta model)| 721x1440| fp16 | 9GB | [Onedrive](https://pjlab-my.sharepoint.cn/:f:/g/personal/hantao_dispatch_pjlab_org_cn/EkMzQtj__wFLgyPIdAQ2DDUB-wsNhGQ80lTGX5SI20fi7w?e=MHJaRb) | [fengwu_ghr_demo.py](./fengwu_ghr_demo.py) |
+| FengWu-GHR (Meta model)| 721x1440| fp16 | 9GB | [Onedrive](https://pjlab-my.sharepoint.cn/:f:/g/personal/hantao_dispatch_pjlab_org_cn/EkMzQtj__wFLgyPIdAQ2DDUB-wsNhGQ80lTGX5SI20fi7w?e=WO1ttV) | [fengwu_ghr_demo.py](./fengwu_ghr_demo.py) |
 | FengWu-GHR (full model) |  2001x4000 | - |- |- | - |
 
 
@@ -35,9 +35,9 @@ $ conda create -n fengwu_ghr python=3.10 -y
 $ python3 -m pip install -r requirements.txt
 ```
 ### 2. Download the Pretrained ONNX model
-Download `onnx` dir from [OneDrive](https://pjlab-my.sharepoint.cn/:f:/g/personal/hantao_dispatch_pjlab_org_cn/EskXFthAs-NHk42nMzoBOAcB_AfDES52Kb6RcH23OcngoQ?e=TbjSr1) and place it in the `$FengWu-GHR.onnx` (the root of this repository).
+Download `onnx` dir from [OneDrive](https://pjlab-my.sharepoint.cn/:f:/g/personal/hantao_dispatch_pjlab_org_cn/EkMzQtj__wFLgyPIdAQ2DDUB-wsNhGQ80lTGX5SI20fi7w?e=WO1ttV) and place it in the `$FengWu-GHR.onnx` (the root of this repository).
 
-### 3. Download the `input` data from [OneDrive](https://pjlab-my.sharepoint.cn/:f:/g/personal/hantao_dispatch_pjlab_org_cn/EskXFthAs-NHk42nMzoBOAcB_AfDES52Kb6RcH23OcngoQ?e=TbjSr1) and organize it as following structure.
+### 3. Download the `input` data from [OneDrive](https://pjlab-my.sharepoint.cn/:f:/g/personal/hantao_dispatch_pjlab_org_cn/EsBgPiyns-xJqwDQzqH548UBiaepqz3EoAJOUeR0QATYmQ?e=fpMQmq) and organize it as following structure.
 ```
 $ FengWu-GHR.onnx/
 ├── data/
