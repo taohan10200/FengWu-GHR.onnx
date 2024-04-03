@@ -201,16 +201,16 @@ def plot_surface_demo_gif(initial_timestamp:str, steps: int, plot_variable:list)
     # compress_gif(save_path,save_path)
 
 if __name__ == "__main__":
-    # plot_pressure_demo_gif(initial_timestamp='2023-06-01T00:00:00', 
-    #               steps=20, 
-    #               plot_variable={'z':[850,500],
-    #                              'q':[850,500],
-    #                              'u':[850,500],
-    #                              'v':[850,500],
-    #                              't':[850,500],
-    #                              }
-    #                 )
+    plot_pressure_demo_gif(initial_timestamp='2023-06-01T00:00:00', 
+                  steps=40, 
+                  plot_variable={'z':[850,500],
+                                 'q':[850,500],
+                                 'u':[850,500],
+                                 'v':[850,500],
+                                 't':[850,500],
+                                 }
+                    )
     plot_surface_demo_gif(initial_timestamp='2023-06-01T00:00:00', 
-                  steps=20, 
+                  steps=40, 
                   plot_variable=['sp','v10','v100', 't2m','tp6h', 'msl']
                                 )
