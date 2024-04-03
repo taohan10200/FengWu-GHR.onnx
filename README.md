@@ -82,7 +82,7 @@ save_cfg = dict(
 ```
 ## Notes
 1. This demo is runing under the given input samples. If you want to inference under the forcing of other initial fields, please download them from [ERA5 pressure-level dataset](https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-pressure-levels) and [ERA5 single-level dataset](https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-single-levels?tab=overview).
-2. The input and forecast of `precipitation` are 6-hour accumulations. However, ERA5 provides it with houly accumulation, please handle it with care.
+2. The input and forecast of `precipitation` are 6-hour accumulations. However, ERA5 provides it with hourly accumulation, please process it with care if you are using your own data.
 3. This version of FengWu-GHR (Meta Model) receives input data with a shape of `74x721x1440`, where 74 represents 74 atmospheric features. The latitude range is the `[90N, 90S]`, and the longitude range is `[-180, 180]`. The first 65 variables are pressure-level variables in the order of  `['z', 'q', 'u', 'v', 't']`, where each variable has 13 levels: `[1000.,  925.,  850.,  700.,    600.,   500.,   400., 300.,  250.,    200.,   150.,    100., 50.]`. The remain 9 variable are surface variables:`['v10','u10','v100', 'u100', 't2m','tcc', 'sp','tp6h', 'msl']`. Refer to [fengwu_ghr_cfg.py](./config/fengwu_ghr_cfg.py) for more information.
 
 
