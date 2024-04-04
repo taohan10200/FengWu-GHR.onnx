@@ -9,7 +9,7 @@ Download onnx models here:
 
 | Model |Resolution | Precision | Size | URL | Demo |
 | :-: | :-: | :-: |:-: | :-: | :-: |
-| FengWu-GHR (Meta model)| 721x1440| fp16 | 9GB | [Onedrive](https://pjlab-my.sharepoint.cn/:f:/g/personal/hantao_dispatch_pjlab_org_cn/EkMzQtj__wFLgyPIdAQ2DDUB-wsNhGQ80lTGX5SI20fi7w?e=WO1ttV) | [fengwu_ghr_demo.py](./fengwu_ghr_demo.py) |
+| FengWu-GHR (Meta model)| 721x1440| fp16 | 9GB | [OneDrive](https://pjlab-my.sharepoint.cn/:f:/g/personal/hantao_dispatch_pjlab_org_cn/EkMzQtj__wFLgyPIdAQ2DDUB-wsNhGQ80lTGX5SI20fi7w?e=WO1ttV) | [fengwu_ghr_demo.py](./fengwu_ghr_demo.py) |
 | FengWu-GHR (full model) |  2001x4000 | - |- |- | - |
 
 
@@ -91,7 +91,7 @@ save_cfg = dict(
 ## Demos
 The following are demos of 10-days lead forecasting after running above script:
 
-### Demo 1: Some Surface Variables: `10 mete wind (v10), 100 meter wind (v100), 2 meter temperature (t2m), surface pressure (sp), 6-hour precipitation (tp6h), mean sea-level pressure (msl)`
+### Demo 1: Some Surface Variables: `10 meter wind (v10), 100 meter wind (v100), 2 meter temperature (t2m), surface pressure (sp), 6-hour precipitation (tp6h), mean sea-level pressure (msl)`
 ![surface](./data/demos/surface_forecast_vs_real.gif)
 
 ### Demo 2: Geopotential
