@@ -1,6 +1,5 @@
 # Copyright (c) Tao Han: hantao10200@gmail.com. All rights reserved.
 import os
-import pdb
 import argparse
 import json
 import numpy as np
@@ -11,6 +10,7 @@ from nwp_models import MemoryPoolSimple, npsoftmax, npmultinominal2D
 from mmengine.config import Config, DictAction
 from datetime import datetime, timedelta
 from tools.write_to_grib import write_grib
+from tools.plot_demo_gif import plot_pressure_demo_gif, plot_surface_demo_gif
 
 PROMPT_DICT = {
     "prompt_input":
@@ -209,13 +209,27 @@ def main():
     FengWu_GHR = FengWu_GHR_Inference(
                     cfg=cfg
                     )
-    np.random.seed(42)
+    # np.random.seed(42)
     # data = np.random.rand(1,74, 721, 1440).astype(np.float16)
-    data = np.ones((1,74, 721, 1440)).astype(np.float16)
+    # data = np.ones((1,74, 721, 1440)).astype(np.float16)
     # data = np.random.rand(1,7200, 3072).astype(np.float16)
     
     FengWu_GHR.inference(args.timestamp, np.array(0, dtype=np.int64))
-
+    
+    plot_pressure_demo_gif(initial_timestamp=args.timestamp, 
+                  steps=40, 
+                  plot_variable={'z':[850,500],
+                                 'q':[850,500],
+                                 'u':[850,500],
+                                 'v':[850,500],
+                                 't':[850,500],
+                                 }
+                    )
+    
+    plot_surface_demo_gif(initial_timestamp=args.timestamp, 
+                  steps=40, 
+                  plot_variable=['sp','v10','v100', 't2m','tp6h', 'msl']
+                                )
 
 if __name__ == '__main__':
     main()

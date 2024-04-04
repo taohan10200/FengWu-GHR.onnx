@@ -1,4 +1,5 @@
 onnxruntime
+onnx==1.16.0
 loguru
 sentencepiece
 psutil
@@ -7,3 +8,8 @@ cfgrib
 onnxconverter-common==1.13.0
 onnxsim==0.4.19
 basemap
+mmengine
+xarray
+cfgrib
+netCDF4
+shutil
