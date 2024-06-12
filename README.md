@@ -56,13 +56,13 @@ $ FengWu-GHR.onnx/
 ```
 ### 4. Run the inference and demos script
 ```bash
-$ python -u fengwu_ghr_demo.py --timestamp=2023-06-01T00:00:00 --config=config/fengwu_ghr_cfg.py 
+$ python -u fengwu_ghr_inference.py --timestamp=2023-06-01T00:00:00 --config=config/fengwu_ghr_cfg.py 
 ..
 # If you only have 10 GB memory, use `--poolsize`
-$ python -u fengwu_ghr_demo.py --timestamp=2023-06-01T00:00:00 --config=config/fengwu_ghr_cfg.py  --poolsize 10
+$ python -u fengwu_ghr_inference.py --timestamp=2023-06-01T00:00:00 --config=config/fengwu_ghr_cfg.py  --poolsize 10
 ..
 # Try more options
-$ python -u fengwu_ghr_demo.py --help
+$ python -u fengwu_ghr_inference.py --help
 ```
 
 Reminder: After runing this script, the forecast results will be saved as `netcdf` format in `data/output/${timestamp}`. Feel free to change the  `inference_steps` and `save_cfg` in [fengwu_ghr_cfg.py](./config/fengwu_ghr_cfg.py) for rollout length and saved variables.  

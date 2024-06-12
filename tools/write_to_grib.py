@@ -32,6 +32,7 @@ def write_grib(data_sample: Union[torch.Tensor, np.ndarray],
                channels_to_vname: Dict=None, 
                filter_dict: list=['z_500','z_850', 't_500', 't_850','tp6h', 'u10', 'v10'],
                s3_client: object=None,
+               merge_pressure_surface = True
                )->None:
     """
     args: 
@@ -140,8 +141,9 @@ def write_grib(data_sample: Union[torch.Tensor, np.ndarray],
                         },
                 attrs={
                     "GRIB_edition": 2,
-                    "description": "Prediction of AI-based NWP model: FengWu-v2",
-                    "institution": "Shanghai Ailab (Tao Han@hantao10200@gmail.com)",
+                    "description": "Prediction of AI-based NWP model: FengWu-GHR",
+                    "institution": "Shanghai Ailab",
+                    "contact": "Tao Han@hantao10200@gmail.com",
                     "initial_time": f'Initiai filed time: {initial_time}',
                     "history": f"First generate at:{generate_time}"
                     }
@@ -187,7 +189,8 @@ def write_grib(data_sample: Union[torch.Tensor, np.ndarray],
                 attrs={
                     "GRIB_edition": 2,
                     "description": "Prediction of AI-based NWP model: FengWu-v2",
-                    "institution": "Shanghai Ailab (Tao Han@hantao10200@gmail.com)",
+                    "institution": "Shanghai Ailab",
+                    "contact": "Tao Han@hantao10200@gmail.com",
                     "initial_time": f'Initiai filed time: {initial_time}',
                     "history": f"First generate at:{generate_time}"
                     }
@@ -207,10 +210,9 @@ def write_grib(data_sample: Union[torch.Tensor, np.ndarray],
         if isinstance(data_samples, torch.Tensor):
             data_samples = data_samples.numpy()
             
-
         v_num, times, level_num, lat_num, lon_num = data_samples.shape
 
-        ds = xr.Dataset(
+        ds_surface = xr.Dataset(
             {
                 ShortName[0]: xr.DataArray(
                     data=data_samples[idx],
@@ -248,17 +250,18 @@ def write_grib(data_sample: Union[torch.Tensor, np.ndarray],
                     },
             attrs={
                 "GRIB_edition": 2,
-                "description": "Prediction of AI-based NWP model: FengWu-v2",
-                "institution": "Shanghai Ailab (Tao Han@hantao10200@gmail.com)",
+                "description": "Prediction of AI-based NWP model: FengWu-GHR",
+                "institution": "Shanghai Ailab",
+                "contact": "Tao Han@hantao10200@gmail.com",
                 "history": f"First generate at:{generate_time}"
             }
             )
-
+           
         if save_path.endswith('nc'): 
-            ds.to_netcdf(save_path)
+            ds_surface.to_netcdf(save_path)
         elif save_path.endswith('grib'): 
-            to_grib(ds, save_path)
-                
+            to_grib(ds_surface, save_path)
+             
 if __name__ == "__main__":
     data = torch.rand(3,1,3,720,1440)
     
