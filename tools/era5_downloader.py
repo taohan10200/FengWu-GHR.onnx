@@ -90,7 +90,7 @@ class era5_downloader():
                 self.cdsapi_client.retrieve(self.ecmwf_dataset_single, request_dic, tp_file_name)
             ds1 = xr.open_dataset(tp_file_name)
 
-            ds['tp'].values += ds1['tp'].values 
+            ds['tp'].data = ds['tp'].data+ ds1['tp'].data 
             
             os.remove(tp_file_name)          
         # import pdb

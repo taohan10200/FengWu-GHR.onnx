@@ -126,9 +126,12 @@ class FengWu_GHR_Inference:
     def read_initial_field(self, timestamp):
         input_initial_field=[]
         try:
-            pressure_data = xr.open_dataset(f'./data/input/era5/{timestamp}.grib', 
+            pressure_data = xr.open_dataset(f'./data/input/era5/{timestamp[:4]}/{timestamp}_pressure.nc', 
                                         engine='cfgrib',
                                         backend_kwargs={'indexpath': ''})
+            surface_data = xr.open_dataset(f'./data/input/era5/{timestamp[:4]}/{timestamp}_single.nc', 
+                            engine='cfgrib',
+                            backend_kwargs={'indexpath': ''})
         except Exception as e:
             print("An error occurred:", e)
             raise SystemExit("Program terminated due to an error.")
@@ -141,12 +144,13 @@ class FengWu_GHR_Inference:
                 input_initial_field.append(data[None,:,:])
 
         for vname in self.cfg.vnames.get('single'):
-            try:
-                data = np.load(f'./data/input/era5/{timestamp}/{vname}.npy')
-            except Exception as e:
-                print("An error occurred:", e)
-                raise SystemExit("Program terminated due to an error.")
-            if vname == 'tp6h':
+            # try:
+            #     data = np.load(f'./data/input/era5/{timestamp}/{vname}.npy')
+            # except Exception as e:
+            #     print("An error occurred:", e)
+            #     raise SystemExit("Program terminated due to an error.")
+            data = surface_data[vname].data
+            if vname == 'tp':
                 data =  data*1000  # if the unit is meter, please transfer it to millmeter
             input_initial_field.append(data[None,:,:])
         
