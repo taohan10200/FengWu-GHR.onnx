@@ -43,7 +43,7 @@ def plot_pressure_demo_gif(initial_timestamp:str, steps: int, plot_variable:dict
 
         # read reanalysis data
         real_dataset = xr.open_dataset(
-            f'./data/input/era5/{fc_timestamp}.grib', 
+            f'./data/input/era5/{fc_timestamp[:4]}/{fc_timestamp}_presure.grib', 
             #engine='cfgrib',
             #backend_kwargs={'indexpath': ''}
             )

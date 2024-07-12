@@ -17,7 +17,8 @@ import tempfile
 import pdb
 import copy
 from pandas._typing import  DatetimeLikeScalar
-
+from datetime import datetime, timedelta
+import xarray as xr
 class era5_downloader():
     def __init__(self, config):
         self.cfg = Config.fromfile(config)
@@ -42,7 +43,7 @@ class era5_downloader():
         file_name = f'{prefix}_pressure{extension}'
         print(f'File is saved to {file_name}')
         
-        if self.check_filesize(file_name, request_dic, self.ecmwf_dataset_pressure, file_name) is False:
+        if self.check_filesize(request_dic, self.ecmwf_dataset_pressure, file_name) is False:
             print("{} does not been completely downloaded, "
                   "I would like to download {} again !!!".format(file_name, file_name))
         
@@ -61,17 +62,60 @@ class era5_downloader():
         request_dic.update(time_required)        
         file_name = f'{prefix}_single{extension}'
         print(f'File is saved to {file_name}') 
-        
-        if self.check_filesize(file_name, request_dic, self.ecmwf_dataset_single, file_name) is False:
+      
+        if self.check_filesize(request_dic, self.ecmwf_dataset_single, file_name) is False:
             print("{} does not been completely downloaded, "
                   "I would like to download it again !!!".format(file_key))
             self.cdsapi_client.retrieve(self.ecmwf_dataset_single, request_dic, file_name)
+
             self.save(time_required, file_key)
         else:
-            print("{} has been fully downloaded, No need to down it again !!!".format(file_key))
-            return True
+            print("{} has been fully downloaded, No need to down it again !!!".format(file_name))
 
-    def check_filesize(self, file_key,request_dic, ecmwf_dataset, file_path):
+
+        
+        
+        start_time  = datetime.strptime(f"{time_required['year']}-{time_required['month']}-{time_required['day']} {time_required['time']}", "%Y-%m-%d %H:%M:%S")
+
+        request_dic.update({'variable':['total_precipitation']})
+        for i in range(1,6):
+            time_require = str(start_time-timedelta(hours=i))
+            yy, mm, dd, hh = self.get_yy_mm_dd_hh(time_require)
+            tp_time_required=dict(year = yy, month = mm, day = dd, time = hh)
+
+            request_dic.update(tp_time_required)  
+            tp_file_name = file_name.replace('single', f'tp{i}h')
+            if self.check_filesize(request_dic, self.ecmwf_dataset_pressure, tp_file_name) is False:
+                self.cdsapi_client.retrieve(self.ecmwf_dataset_single, request_dic, tp_file_name)
+            
+
+            ds2 = xr.open_dataset(f"{prefix}_single{extension}")
+            import pdb
+            pdb.set_trace()
+            
+        return True
+    def merge_input_as_single_file(self, time_stamp, file_path):
+
+        prefix, extension=os.path.splitext(file_path)
+        pressure = xr.open_dataset(f'{prefix}_pressure{extension}')
+        single = xr.open_dataset(f'{prefix}_single{extension}')
+    
+                                           
+        ds2 = xr.open_dataset(f"{input_root}/*surface.nc")
+        ds = xr.merge([ds1, ds2]).sortby("latitude").sel(longitude=slice(lat_west, lat_east), latitude=slice(lon_north, lon_south)) 
+        #longitude=slice(110, 114.6), latitude=slice(34.5, 40.85)
+
+        plev = ds.isobaricInhPa.astype(int).data
+        aim_lev = np.sort(np.append(plev, 100))[::-1]
+        ds = ds.interp(isobaricInhPa=aim_lev)
+
+        time = pd.date_range(ds.time.data[0], ds.time.data[-1], freq='15min')
+        ds = ds.interp(time=time).compute()
+        ds.to_netcdf(f"{save_root}/FengWu_GHR_Shanxi_{initial_time}.nc")
+
+        print(xr.open_dataset(f"{save_root}/FengWu_GHR_Shanxi_{initial_time}.nc"))
+
+    def check_filesize(self, request_dic, ecmwf_dataset, file_path):
         exist_size=0
 
         if not os.path.exists(file_path):
@@ -84,11 +128,11 @@ class era5_downloader():
 
         if remote_size == exist_size:
             print("{} is complete, remote vs local size: {}=={}"
-                  .format(file_key, remote_size, exist_size))
+                  .format(file_path, remote_size, exist_size))
             return  True
         else:
             print("{} is not complete, remote vs local size: {}!={}"
-                  .format(file_key, remote_size, exist_size))
+                  .format(file_path, remote_size, exist_size))
             return False
 
 
@@ -131,6 +175,7 @@ class era5_downloader():
         file_path = f'{local_root}/{yy}/{time_stamp}.nc'
       
         self.save(time_required, file_path)
+        self.merge_input_as_single_file(time_stamp, file_path)
         
         
 def formatSize(bytes,format='GB'):
@@ -151,6 +196,8 @@ if __name__ =="__main__":
 
     parser = argparse.ArgumentParser(description='Interp station')
     parser.add_argument('--time_stamp', type=str, help='initial timestamp')
+    parser.add_argument('--local_root', type=str, help='the path to save the era5 data')
+    
     args = parser.parse_args()
     time_stamp = args.time_stamp
 
@@ -162,4 +209,4 @@ if __name__ =="__main__":
     from era5_downloader import era5_downloader
     ERA5_data = era5_downloader('tools/era5_config.py')
     data = ERA5_data.get_form_timestamp(time_stamp=time_stamp,
-                                        local_root=local_root)
+                                        local_root=args.local_root)

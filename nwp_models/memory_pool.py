@@ -24,7 +24,7 @@ class OrtWrapper:
         self.sess = ort.InferenceSession(onnxfile, 
                                          sess_options=options, 
                                          providers=[('CUDAExecutionProvider', cuda_provider_options)])
-        # print(self.sess.get_providers())
+        print(self.sess.get_providers())
         
         # model_onnx = onnx.load(onnxfile)    #load onnx    
         # print(onnx.helper.printable_graph(model_onnx.graph))    # 打印onnx网络

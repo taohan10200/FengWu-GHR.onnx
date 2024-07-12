@@ -1,16 +1,15 @@
 # FengWu-GHR onnx
-## :rocket: FengWu-GHR: Learning the Kilometer-scale Medium-range Global Weather Forecasting, arXiv preprint: 2402.00059, 2023. https://arxiv.org/abs/2402.00059.
 
+!!! Note: Open source is not easy, please star to show support.
+## :rocket: Reading paper first:
+###  FengWu-GHR: Learning the Kilometer-scale Medium-range Global Weather Forecasting, arXiv preprint: 2402.00059, 2023. https://arxiv.org/abs/2402.00059.
 
-
-
-
-Download onnx models here:
+We now support two version of FengWu-GHR:
 
 | Model |Resolution | Precision | Size | URL | Demo |
 | :-: | :-: | :-: |:-: | :-: | :-: |
-| FengWu-GHR (meta_model_0.25°)| 721x1440, 0.25°| fp16 | 9.0GB | [OneDrive](https://pjlab-my.sharepoint.cn/:f:/g/personal/hantao_dispatch_pjlab_org_cn/EkMzQtj__wFLgyPIdAQ2DDUB-wsNhGQ80lTGX5SI20fi7w?e=WO1ttV) | [fengwu_ghr_inference_25km.py](./fengwu_ghr_inference_25km.py) |
-| FengWu-GHR (GHR_0.09° ) |  2001x4000, 0.09° | fp6 |6.5GB |- | [fengwu_ghr_inference_9km.py](./fengwu_ghr_inference_9km.py) |
+| FengWu-GHR (meta_model_0.25°)| 721x1440, 0.25°| fp16 | 9.0GB | [OneDrive](https://hkustconnect-my.sharepoint.com/:u:/g/personal/thanad_connect_ust_hk/EYY_VIxLltlMvkqG-1T6IBEBXYcPWHF5PwKrUL2TJfTt2g?e=pQbJHo) | [fengwu_ghr_inference_25km.py](./fengwu_ghr_inference_25km.py) |
+| FengWu-GHR (GHR_0.09° ) |  2001x4000, 0.09° | fp16 |6.5GB |- | [fengwu_ghr_inference_9km.py](./fengwu_ghr_inference_9km.py) |
 
 
 ## News
@@ -36,33 +35,77 @@ $ conda create -n fengwu_ghr python=3.10 -y
 $ source activate fengwu_ghr
 $ python3 -m pip install -r requirements.txt
 ```
-### 2. Download the Pretrained ONNX model
-Download `onnx` dir from [OneDrive](https://pjlab-my.sharepoint.cn/:f:/g/personal/hantao_dispatch_pjlab_org_cn/EkMzQtj__wFLgyPIdAQ2DDUB-wsNhGQ80lTGX5SI20fi7w?e=WO1ttV) and place it in the `$FengWu-GHR.onnx` (the root of this repository).
+### 2. Download the Pretrained ONNX model.
+Download [meta_model_0.25](https://hkustconnect-my.sharepoint.com/:u:/g/personal/thanad_connect_ust_hk/EYY_VIxLltlMvkqG-1T6IBEBXYcPWHF5PwKrUL2TJfTt2g?e=pQbJHo) and unzip it in `$FengWu-GHR.onnx/onnx/` (the root of this repository).
 
-### 3. Download the `input` data from [OneDrive](https://pjlab-my.sharepoint.cn/:f:/g/personal/hantao_dispatch_pjlab_org_cn/EsBgPiyns-xJqwDQzqH548UBiaepqz3EoAJOUeR0QATYmQ?e=fpMQmq) and organize it as following structure.
+### 3. Get the input data/ initial field
+Download sample input from [here](https://hkustconnect-my.sharepoint.com/:f:/g/personal/thanad_connect_ust_hk/EmLxeXdC2a5NlJ0RW5ZHyvEBCuFcABtk5Z3SqbIGwEyK2w?e=8ZKuzU).
+
+
+> We support the grib format input, which  waives a complex data prepareness. What you should do is to organize your data as a packed grib file after you getting the initial field for ECMWF or other data sources. Below is a sample we provided:  
+
+```python
+import xarray as xr
+input_data = xr.open_dataset('./data/input/analysis/2024-07-08T18:00:00.grib')
+input_data
+Out[1]: 
+<xarray.Dataset>
+Dimensions:        (latitude: 1801, longitude: 3600, isobaricInhPa: 13)
+Coordinates:
+  * latitude       (latitude) float32 90.0 89.9 89.8 89.7 ... -89.8 -89.9 -90.0
+  * longitude      (longitude) float32 0.0 0.1 0.2 0.3 ... 359.7 359.8 359.9
+  * isobaricInhPa  (isobaricInhPa) int32 1000 925 850 700 600 ... 200 150 100 50
+Data variables: (12/16)
+    v10            (latitude, longitude) float32 ...
+    u10            (latitude, longitude) float32 ...
+    v100           (latitude, longitude) float32 ...
+    u100           (latitude, longitude) float32 ...
+    t2m            (latitude, longitude) float32 ...
+    tcc            (latitude, longitude) float32 ...
+    ...             ...
+    z              (isobaricInhPa, latitude, longitude) float32 ...
+    q              (isobaricInhPa, latitude, longitude) float32 ...
+    u              (isobaricInhPa, latitude, longitude) float32 ...
+    v              (isobaricInhPa, latitude, longitude) float32 ...
+    t              (isobaricInhPa, latitude, longitude) float32 ...
+    w              (isobaricInhPa, latitude, longitude) float32 ...
+```
+
+**Note**: The requirement for `tp6h` in the initial field is the accumulated precipitation over the past six hours from the analysis time. It can be derived from the predictions intilized at the last time.
+
+> If you are with diffculties to get the high-reslolution analysis data. We here also provide a  portable way to download the EAR5 data as initial field. 
+
+```python
+ython tools/era5_downloader.py --time_stamp='2024-07-01T00:00:00' --local_root='./data/input/era5'
+```
+### 4.  Organize your project as following structure.
 ```
 $ FengWu-GHR.onnx/
 ├── data/
 │   ├── demos
 │   ├── input
 │   └── output
-├── onnx/
-│   └── fengwu_ghr/
-│       └── meta_model/
+├── onnx/   
+│     └── meta_model_0.25/
 │           ├── block_0.onnx
 │           ├── ...
 │           └── encoder.onnx
+│     └── ghr_0.09/
 ├── fengwu_ghr_inference_9km.py
 ├── fengwu_ghr_inference_25km.py
+├── LICENSE
 └── README.md
+
 ```
-### 4. Run the inference and demos script
+### 5. Run the inference and demos script
 ```bash
-$ python -u fengwu_ghr_inference.py --timestamp=2024-07-08T18:00:00  --config=config/config/fengwu_ghr_cfg_74v_onnx.py 
-..
+## Inference for high resolution forecast: 0.09x0.09 
+$ python -u fengwu_ghr_inference_9km.py --timestamp=2024-07-08T18:00:00  --config=config/config/fengwu_ghr_cfg_74v_0.09.py 
+
+## Inference for high resolution forecast: 0.25x0.25 
 # If you only have 10 GB memory, use `--poolsize`
-$ python -u fengwu_ghr_inference.py --timestamp=2023-06-01T00:00:00 --gpu=0 --config=config/fengwu_ghr_cfg.py  --poolsize 10
-..
+python -u fengwu_ghr_inference_25km.py --timestamp=2024-07-01T00:00:00 --config=config/fengwu_ghr_cfg_74v_0.25.py  --poolsize 10
+
 # Try more options
 $ python -u fengwu_ghr_inference.py --help
 ```
