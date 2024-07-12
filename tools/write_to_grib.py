@@ -21,10 +21,13 @@ grib_para = {
 "u100": {"Name":"100m V component of wind",        "ShortName":"u100",   'Unit':"m s^-1",  "ParaID": 135},
 "v100": {"Name":"100m V component of wind",        "ShortName":"v100",   'Unit':"m s^-1",  "ParaID": 135},
 "tp6h": {"Name":"Total 6H Precipitation", "ShortName":"tp6h",   'Unit':"mm",  "ParaID": 228},
+"tp": {"Name":"Total 1H Precipitation", "ShortName":"tp",   'Unit':"mm",  "ParaID": 228},
 "t2m": {"Name":"2 meter temperature", "ShortName":"t2m",   'Unit':"K",  "ParaID": 167},
 "msl": {"Name":"mean sea level pressure", "ShortName":"msl",   'Unit':"Pa",  "ParaID": 129.151},
 "tcc": {"Name":"Total cloud cover", "ShortName":"tcc",   'Unit':"0-1",  "ParaID": 164},
 "sp":{"Name":"Surface pressure",          "ShortName":"sp",   'Unit':"Pa",        "ParaID": 134},
+"ssr": {"Name":"Surface net short-wave (solar) radiation", "ShortName":"ssr",   'Unit':"J m-2",  "ParaID": 176},
+"ssr6h": {"Name":"Surface net short-wave (solar) radiation (6 hour)", "ShortName":"ssr6h",   'Unit':"J m-2",  "ParaID": 176},
 }
 
 def write_grib(data_sample: Union[torch.Tensor, np.ndarray], 
@@ -77,6 +80,7 @@ def write_grib(data_sample: Union[torch.Tensor, np.ndarray],
         
         pressure_dict = {}
         surface_dict = {}
+
         for channle_id, shortName_level in channels_to_vname.items():
             if shortName_level in filter_dict:
                 shortName, level = shortName_level.split('_') if '_' in shortName_level else (shortName_level, None)
@@ -159,6 +163,8 @@ def write_grib(data_sample: Union[torch.Tensor, np.ndarray],
                 print(f'upload the {s3_uri} to ceph!!!!')
                 
             # ========================== surface prediction=========================
+            #import pdb
+            #pdb.set_trace()
             ds = xr.Dataset(
                 {
                 ShortName: xr.DataArray(

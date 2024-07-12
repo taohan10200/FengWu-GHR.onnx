@@ -32,7 +32,8 @@ class FengWu_GHR:
             total, used, free = get_mem_info()
             self._pool.wait_map[key]['memory_need'] = used-self.past_allocated_memory
             self.past_allocated_memory = used
-            
+        #import pdb
+        #pdb.set_trace()    
         print(f'one step time is {time.time()-st}')
             # if 'block_3' in key:
             #     import pdb

@@ -9,11 +9,12 @@ Download onnx models here:
 
 | Model |Resolution | Precision | Size | URL | Demo |
 | :-: | :-: | :-: |:-: | :-: | :-: |
-| FengWu-GHR (Meta model)| 721x1440| fp16 | 9GB | [OneDrive](https://pjlab-my.sharepoint.cn/:f:/g/personal/hantao_dispatch_pjlab_org_cn/EkMzQtj__wFLgyPIdAQ2DDUB-wsNhGQ80lTGX5SI20fi7w?e=WO1ttV) | [fengwu_ghr_inference.py](./fengwu_ghr_inference.py) |
-| FengWu-GHR (full model) |  2001x4000 | - |- |- | - |
+| FengWu-GHR (meta_model_0.25°)| 721x1440, 0.25°| fp16 | 9.0GB | [OneDrive](https://pjlab-my.sharepoint.cn/:f:/g/personal/hantao_dispatch_pjlab_org_cn/EkMzQtj__wFLgyPIdAQ2DDUB-wsNhGQ80lTGX5SI20fi7w?e=WO1ttV) | [fengwu_ghr_inference_25km.py](./fengwu_ghr_inference_25km.py) |
+| FengWu-GHR (GHR_0.09° ) |  2001x4000, 0.09° | fp6 |6.5GB |- | [fengwu_ghr_inference_9km.py](./fengwu_ghr_inference_9km.py) |
 
 
 ## News
+2024/07/12 add FengWu-GHR (full model) onnx-fp16 model :star:
 
 2024/04/04 add FengWu-GHR (Meta Model) onnx-fp16 model and its demos :star:
 
@@ -25,7 +26,7 @@ Download onnx models here:
 * Release FengWu-GHR onnx models (Meta model-only) and their onnxruntime standalone demo
 * No `torch` required
 * Using memory pool to dynimically dispatch merory, allowing running on small GPU memory or CUP-only devices 
-* Support device: 16 GB CPU laptop/PC (very slow :turtle:) or Nvidia GPU (GPU>=20GB) 
+* Support device: 16 GB CPU laptop/PC (very slow :turtle:) or Nvidia GPU (GPU>=20GB for meta model and GPU>50GB for GHR_0.09) 
 
 ## Getting started
 ### 1. Clone the code and prepare environment (if necessary) using the following command:
@@ -51,15 +52,16 @@ $ FengWu-GHR.onnx/
 │           ├── block_0.onnx
 │           ├── ...
 │           └── encoder.onnx
-├── fengwu_ghr_demo.py
+├── fengwu_ghr_inference_9km.py
+├── fengwu_ghr_inference_25km.py
 └── README.md
 ```
 ### 4. Run the inference and demos script
 ```bash
-$ python -u fengwu_ghr_inference.py --timestamp=2023-06-01T00:00:00 --config=config/fengwu_ghr_cfg.py 
+$ python -u fengwu_ghr_inference.py --timestamp=2024-07-08T18:00:00  --config=config/config/fengwu_ghr_cfg_74v_onnx.py 
 ..
 # If you only have 10 GB memory, use `--poolsize`
-$ python -u fengwu_ghr_inference.py --timestamp=2023-06-01T00:00:00 --config=config/fengwu_ghr_cfg.py  --poolsize 10
+$ python -u fengwu_ghr_inference.py --timestamp=2023-06-01T00:00:00 --gpu=0 --config=config/fengwu_ghr_cfg.py  --poolsize 10
 ..
 # Try more options
 $ python -u fengwu_ghr_inference.py --help

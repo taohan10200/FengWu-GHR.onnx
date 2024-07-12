@@ -1,6 +1,12 @@
 __pycache__
+*online
+*config/torch
 *onnx
 *data/input
 *data/output
 *data/script
 *data/shanxi
+nwp_models/fengwu_ghr_lora.py
+nwp_models/lora.py
+
+

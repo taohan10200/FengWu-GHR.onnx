@@ -7,7 +7,8 @@ import os
 from datetime import datetime, timedelta
 import numpy as np 
 from mpl_toolkits.basemap import Basemap
-
+import torch.nn.functional as F
+import torch
 def fig_to_image(fig):
     buf = io.BytesIO()
     fig.savefig(buf, format='png', dpi=50)
@@ -43,8 +44,8 @@ def plot_pressure_demo_gif(initial_timestamp:str, steps: int, plot_variable:dict
         # read reanalysis data
         real_dataset = xr.open_dataset(
             f'./data/input/era5/{fc_timestamp}.grib', 
-            engine='cfgrib',
-            backend_kwargs={'indexpath': ''}
+            #engine='cfgrib',
+            #backend_kwargs={'indexpath': ''}
             )
         
         # import pdb
@@ -66,7 +67,16 @@ def plot_pressure_demo_gif(initial_timestamp:str, steps: int, plot_variable:dict
                     continue
                 fc_data= forecast_data.sel(isobaricInhPa=height).values.squeeze()  # 绘制预测和真实的大气场图像
                 real_data = real_dataset[vname].sel(isobaricInhPa=height).values.squeeze()
-
+                
+                from scipy.ndimage import zoom
+                input_shape = (2001, 4000) 
+                real_data = zoom(real_data, 
+                
+                        ( input_shape[0] / real_data.shape[0],
+                          input_shape[1] / real_data.shape[1]),
+                        order=1)  #
+        
+                
                 print(f'{key}:{fc_timestamp}:{np.sqrt(np.square(fc_data-real_data).mean())}')
                 aspect_ratio = fc_data.shape[1] / fc_data.shape[0]  # Calculate the aspect ratio of the image
                 fig_width = 12  # Set the desired width of the figure
@@ -131,19 +141,43 @@ def plot_surface_demo_gif(initial_timestamp:str, steps: int, plot_variable:list)
                                     engine='netcdf4',  
                                     )
         vnames = forecast_dataset.data_vars.keys()
-        # import pdb
-        # pdb.set_trace()
-        
+
+        # variable = 't2m'
+        # forecast_dataset[variable].plot()
+        # plt.show()
+        # plt.savefig('./data/demos/fc_t2m.png')
 
 
         fontsize = 24
         fig_list = []  # Create a list to store the figures for each vname
         for vname in vnames:
             # read reanalysis data
-            real_data = np.load(
-                f'./data/input/era5/{fc_timestamp}/{vname}.npy', 
+            # real_data = np.load(
+            #     f'./data/input/era5/{fc_timestamp}/{vname}.npy', 
+            #     )
+            real_dataset = xr.open_dataset(
+                f'./data/input/era5/{fc_timestamp}.grib', 
+                #engine='cfgrib',
+                #backend_kwargs={'indexpath': ''}
                 )
-
+            # forecast_dataset[variable].plot()
+            # plt.show()
+            # plt.savefig('./data/demos/real_t2m.png')
+            
+            real_data = real_dataset[vname].values.squeeze()
+            
+            from scipy.ndimage import zoom
+            input_shape = (2001, 4000) 
+            real_data = zoom(real_data, 
+                         (input_shape[0] / real_data.shape[0],
+                          input_shape[1] / real_data.shape[1]),
+                        order=1)  #
+        
+            # real_data = torch.from_numpy(real_data)[None, None, :, :]
+            # real_data = F.interpolate(real_data, size=input_shape, mode='bicubic')
+            # real_data = real_data.squeeze().squeeze()  
+            # real_data = real_data.numpy()  
+            
             fc_data = forecast_dataset[vname].values.squeeze() 
             if vname not in plot_variable:
                 continue
