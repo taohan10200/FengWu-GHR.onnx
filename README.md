@@ -9,7 +9,7 @@ We now support two version of FengWu-GHR:
 | Model |Resolution | Precision | Size | URL | Demo |
 | :-: | :-: | :-: |:-: | :-: | :-: |
 | FengWu-GHR (meta_model_0.25°)| 721x1440, 0.25°| fp16 | 9.0GB | [OneDrive](https://hkustconnect-my.sharepoint.com/:u:/g/personal/thanad_connect_ust_hk/EYY_VIxLltlMvkqG-1T6IBEBXYcPWHF5PwKrUL2TJfTt2g?e=pQbJHo) | [fengwu_ghr_inference_25km.py](./fengwu_ghr_inference_25km.py) |
-| FengWu-GHR (GHR_0.09° ) |  2001x4000, 0.09° | fp16 |6.5GB |- | [fengwu_ghr_inference_9km.py](./fengwu_ghr_inference_9km.py) |
+| FengWu-GHR (GHR_0.09° ) |  2001x4000, 0.09° | fp16 |6.5GB |[Request via email](mailto:hantao10200@gmail.com) | [fengwu_ghr_inference_9km.py](./fengwu_ghr_inference_9km.py) |
 
 
 ## News

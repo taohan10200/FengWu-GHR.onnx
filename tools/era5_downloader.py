@@ -63,14 +63,14 @@ class era5_downloader():
         file_name = f'{prefix}_single{extension}'
         print(f'File is saved to {file_name}') 
       
-        if self.check_filesize(request_dic, self.ecmwf_dataset_single, file_name) is False:
-            print("{} does not been completely downloaded, "
-                  "I would like to download it again !!!".format(file_key))
-            self.cdsapi_client.retrieve(self.ecmwf_dataset_single, request_dic, file_name)
+        # if self.check_filesize(request_dic, self.ecmwf_dataset_single, file_name) is False:
+            # print("{} does not been completely downloaded, "
+                #   "I would like to download it again !!!".format(file_key))
+        self.cdsapi_client.retrieve(self.ecmwf_dataset_single, request_dic, file_name)
 
-            self.save(time_required, file_key)
-        else:
-            print("{} has been fully downloaded, No need to down it again !!!".format(file_name))
+        # self.save(time_required, file_key)
+        # else:
+        #     print("{} has been fully downloaded, No need to down it again !!!".format(file_name))
 
 
         
@@ -78,6 +78,7 @@ class era5_downloader():
         start_time  = datetime.strptime(f"{time_required['year']}-{time_required['month']}-{time_required['day']} {time_required['time']}", "%Y-%m-%d %H:%M:%S")
 
         request_dic.update({'variable':['total_precipitation']})
+        ds = xr.open_dataset(f"{prefix}_single{extension}")
         for i in range(1,6):
             time_require = str(start_time-timedelta(hours=i))
             yy, mm, dd, hh = self.get_yy_mm_dd_hh(time_require)
@@ -85,35 +86,20 @@ class era5_downloader():
 
             request_dic.update(tp_time_required)  
             tp_file_name = file_name.replace('single', f'tp{i}h')
-            if self.check_filesize(request_dic, self.ecmwf_dataset_pressure, tp_file_name) is False:
+            if self.check_filesize(request_dic, self.ecmwf_dataset_single, tp_file_name) is False:
                 self.cdsapi_client.retrieve(self.ecmwf_dataset_single, request_dic, tp_file_name)
-            
+            ds1 = xr.open_dataset(tp_file_name)
 
-            ds2 = xr.open_dataset(f"{prefix}_single{extension}")
-            import pdb
-            pdb.set_trace()
+            ds['tp'].values += ds1['tp'].values 
             
+            os.remove(tp_file_name)          
+        # import pdb
+        # pdb.set_trace()    
+        ds.rename_vars({'tp': 'tp6h'})
+        ds.to_netcdf(f"{prefix}_single{extension}")
+        
         return True
-    def merge_input_as_single_file(self, time_stamp, file_path):
 
-        prefix, extension=os.path.splitext(file_path)
-        pressure = xr.open_dataset(f'{prefix}_pressure{extension}')
-        single = xr.open_dataset(f'{prefix}_single{extension}')
-    
-                                           
-        ds2 = xr.open_dataset(f"{input_root}/*surface.nc")
-        ds = xr.merge([ds1, ds2]).sortby("latitude").sel(longitude=slice(lat_west, lat_east), latitude=slice(lon_north, lon_south)) 
-        #longitude=slice(110, 114.6), latitude=slice(34.5, 40.85)
-
-        plev = ds.isobaricInhPa.astype(int).data
-        aim_lev = np.sort(np.append(plev, 100))[::-1]
-        ds = ds.interp(isobaricInhPa=aim_lev)
-
-        time = pd.date_range(ds.time.data[0], ds.time.data[-1], freq='15min')
-        ds = ds.interp(time=time).compute()
-        ds.to_netcdf(f"{save_root}/FengWu_GHR_Shanxi_{initial_time}.nc")
-
-        print(xr.open_dataset(f"{save_root}/FengWu_GHR_Shanxi_{initial_time}.nc"))
 
     def check_filesize(self, request_dic, ecmwf_dataset, file_path):
         exist_size=0
@@ -175,7 +161,7 @@ class era5_downloader():
         file_path = f'{local_root}/{yy}/{time_stamp}.nc'
       
         self.save(time_required, file_path)
-        self.merge_input_as_single_file(time_stamp, file_path)
+
         
         
 def formatSize(bytes,format='GB'):
