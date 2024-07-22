@@ -12,21 +12,10 @@ from datetime import datetime, timedelta
 from tools.write_to_grib import write_grib
 from tools.plot_demo_gif import plot_pressure_demo_gif, plot_surface_demo_gif
 
-PROMPT_DICT = {
-    "prompt_input":
-    ("Below is an instruction that describes a task, paired with an input that provides further context. "
-     "Write a response that appropriately completes the request.\n\n"
-     "### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:"
-     ),
-    "prompt_no_input":
-    ("Below is an instruction that describes a task. "
-     "Write a response that appropriately completes the request.\n\n"
-     "### Instruction:\n{instruction}\n\n### Response:"),
-}
-PROMPT = PROMPT_DICT['prompt_no_input']
+
 
 class FengWu_GHR_Inference:
-    def __init__(self, cfg: dict = {}):
+    def __init__(self, args, cfg: dict = {}):
         self.cfg = cfg
         onnxdir = cfg.onnx_dir
         if not os.path.exists(onnxdir):
@@ -35,7 +24,7 @@ class FengWu_GHR_Inference:
 
         pool = MemoryPoolSimple(cfg.poolsize_GB)
         self.model = FengWu_GHR(pool, onnxdir, cfg.onnx_keys)
-        pool.check()
+
         
         self.level_mapping =  [cfg.total_levels.index(val) for val in cfg.pressure_level if val in cfg.total_levels ]
         self.mean, self.std = self.get_mean_std() #read the channel-wise mean and std according to the defined variable in configuration.
@@ -192,10 +181,14 @@ def parse_args():
                         default='onnx/fengwu_ghr/meta_model',
                         type=str,
                         help='fengwu-ghr onnx model directory.')
-    parser.add_argument('--poolsize',
+    parser.add_argument('--warning_gpu_memory',
                         default=None,
                         type=int,
                         help='The size of cpu/gpu memory allocated for inference.')
+    parser.add_argument('--max_gpu_memory',
+                        default=None,
+                        type=80,   #unit GB
+                        help='The maximum of gpu memory for your device.')
     parser.add_argument('--timestamp',
                         default='2023-06-01T00:00:00',
                         type=str,
@@ -227,11 +220,10 @@ def main():
     cfg = Config.fromfile(args.config)
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
-    if args.poolsize is not None:
-        cfg.poolsize_GB = args.poolsize
          
     logger.warning(args)
     FengWu_GHR = FengWu_GHR_Inference(
+                    args=args,
                     cfg=cfg
                     )
     # np.random.seed(42)
@@ -251,10 +243,10 @@ def main():
     #                              }
     #                 )
     
-    plot_surface_demo_gif(initial_timestamp=args.timestamp, 
-                  steps=40, 
-                  plot_variable=['sp','v10','v100', 't2m','tp6h', 'msl']
-                                )
+    # plot_surface_demo_gif(initial_timestamp=args.timestamp, 
+    #               steps=40, 
+    #               plot_variable=['sp','v10','v100', 't2m','tp6h', 'msl']
+    #                             )
 
 if __name__ == '__main__':
     main()

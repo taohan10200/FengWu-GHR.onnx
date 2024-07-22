@@ -19,7 +19,7 @@ onnxconverter_common==1.14.0
 onnxruntime_gpu==1.16.3
 onnxsim==0.4.36
 pandas==2.0.3
-psutil==5.9.6
+psutil==5.9.5
 pynvml==11.5.0
 pytz==2023.3
 scipy==1.14.0

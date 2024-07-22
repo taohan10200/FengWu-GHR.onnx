@@ -100,11 +100,11 @@ $ FengWu-GHR.onnx/
 ### 5. Run the inference and demos script
 ```bash
 ## Inference for high resolution forecast: 0.09x0.09 
-$ python -u fengwu_ghr_inference_9km.py --timestamp=2024-07-08T18:00:00  --config=config/config/fengwu_ghr_cfg_74v_0.09.py 
+$ python -u fengwu_ghr_inference_9km.py --timestamp=2024-07-08T18:00:00  --config=config/fengwu_ghr_cfg_74v_0.09.py --gpu=0
 
 ## Inference for high resolution forecast: 0.25x0.25 
 # If you only have 10 GB memory, use `--poolsize`
-python -u fengwu_ghr_inference_25km.py --timestamp=2024-07-01T00:00:00 --config=config/fengwu_ghr_cfg_74v_0.25.py  --poolsize 10
+python -u fengwu_ghr_inference_25km.py --timestamp=2024-07-01T00:00:00 --config=config/fengwu_ghr_cfg_74v_0.25.py  --gpu=0
 
 # Try more options
 $ python -u fengwu_ghr_inference.py --help

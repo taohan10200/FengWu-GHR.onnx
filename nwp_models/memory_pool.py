@@ -1,20 +1,49 @@
 # Copyright (c) Tao Han: hantao10200@gmail.com. All rights reserved.
 from loguru import logger
-from .utils import singleton, get_mem_info
+from .utils import singleton
 import onnxruntime as ort
 import numpy as np
 import os
-import sys
 import psutil
-import onnx
 import math
+import torch
+import pynvml
+
+def get_mem_info():
+    """
+    Get GPU memory usage information based on the GPU ID, in MB units.
+    :param gpu_id: GPU ID
+    :return: total - total GPU memory, used - currently used GPU memory, free - available GPU memory
+    """
+    gpu_id = int(os.environ.get('CUDA_VISIBLE_DEVICES', torch.cuda.current_device()))
+    pynvml.nvmlInit()
+    
+    if torch.cuda.is_available():
+        if gpu_id < 0 or gpu_id >= pynvml.nvmlDeviceGetCount():
+            print(r'gpu_id {} is not existing!'.format(gpu_id))
+            return 0, 0, 0
+
+        handler = pynvml.nvmlDeviceGetHandleByIndex(gpu_id)
+        meminfo = pynvml.nvmlDeviceGetMemoryInfo(handler)
+        total = round(meminfo.total / 1024 / 1024, 2)
+        used = round(meminfo.used / 1024 / 1024, 2)
+        free = round(meminfo.free / 1024 / 1024, 2)
+        return total, used, free
+
+    else:
+        mem_total = round(psutil.virtual_memory().total / 1024 / 1024, 2)
+        mem_free = round(psutil.virtual_memory().available / 1024 / 1024, 2)
+        mem_process_used = round(psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024, 2)
+        
+        return mem_total, mem_process_used, mem_free
+    
 class OrtWrapper:
     def __init__(self, onnxfile: str):
         assert os.path.exists(onnxfile)
         
         # Set the behavier of onnxruntime
         options = ort.SessionOptions()
-        options.enable_cpu_mem_arena=False
+        options.enable_cpu_mem_arena=True
         options.enable_mem_pattern = False
         options.enable_mem_reuse = False
         # Increase the number for faster inference and more memory consumption
@@ -27,7 +56,7 @@ class OrtWrapper:
         print(self.sess.get_providers())
         
         # model_onnx = onnx.load(onnxfile)    #load onnx    
-        # print(onnx.helper.printable_graph(model_onnx.graph))    #
+        # print(onnx.helper.printable_graph(model_onnx.graph))    
         
         self.inputs_names = [input.name for input in self.sess.get_inputs()]
         self.output_names = [output.name for output in self.sess.get_outputs()]
@@ -60,14 +89,20 @@ class OrtWrapper:
 
 @singleton
 class MemoryPoolSimple:
-    def __init__(self, poolsize_GB):
-        if poolsize_GB < 0:
-            raise Exception('poolsize_GB must > 0, get {}'.format(poolsize_GB))
+    def __init__(self, max_memory):
+        if max_memory < 0:
+            raise Exception('max_gpu(cpu)_memory must > 0, get {}'.format(max_memory))
         
-        self.max_size = poolsize_GB*1024
+        self.max_size = max_memory*1024
         self.wait_map = {}
         self.active_map = {}
-        
+        self.memory_need_per_module = {} 
+        self.first_infrence = True
+    
+    def update_memoty_need(self, key, size):
+        if self.first_infrence:
+            self.memory_need_per_module.update({key: size})
+
     def submit(self, key: str, onnx_filepath: str):
         if not os.path.exists(onnx_filepath):
             raise Exception('{} not exist!'.format(onnx_filepath))
@@ -78,14 +113,11 @@ class MemoryPoolSimple:
                 'memory_need': os.path.getsize(onnx_filepath) / 1024 / 1024, 
             }
 
-    def used(self):
-        sum_size = 0
+    def find_max_memory_from_activate_map(self):
         biggest_k = None
         biggest_size = 0
         for key in self.active_map.keys():
-            cur_size = self.wait_map[key]['memory_need']
-            sum_size += cur_size
-
+            cur_size = self.memory_need_per_module[key]
             if biggest_k is None:
                 biggest_k = key
                 biggest_size = cur_size
@@ -95,21 +127,7 @@ class MemoryPoolSimple:
                 biggest_size = cur_size
                 biggest_k = key
         
-        return sum_size, biggest_k
-
-    def check(self):
-        sum_need = 0
-        for k in self.wait_map.keys():
-            sum_need = sum_need + self.wait_map[k]['memory_need']
-            
-        sum_need /= (1024 * 1024 * 1024)
-        
-        total = psutil.virtual_memory().total / (1024 * 1024 * 1024)
-        # import pdb
-        # pdb.set_trace()
-        if total > 0 and total < sum_need:
-            logger.warning('virtual_memory not enough, require {}, try `--poolsize {}`'.format(sum_need, math.floor(total)))
-
+        return biggest_k
 
     def fetch(self, key: str):
         if key in self.active_map:
@@ -117,20 +135,22 @@ class MemoryPoolSimple:
         
 
         onnxfile = self.wait_map[key]['onnx']
+        if self.first_infrence:
+            return OrtWrapper(onnxfile)
+        
         
         # check current memory use
-        active_used_size, biggest_key = self.used()
-        need = max(self.max_size / 2, self.wait_map[key]['memory_need'])
+        biggest_key = self.find_max_memory_from_activate_map()
+        need = self.memory_need_per_module[key]
         total, used, free = get_mem_info()
         
         while biggest_key is not None and need > free:
             # if exceeded once, delete until `max(half_max, file_size)` left
-            need = max(need, self.max_size * 3/4)
             if len(self.active_map) == 0:
                 break
            
             del self.active_map[biggest_key]
-            active_used_size, biggest_key = self.used()
+            biggest_key = self.find_max_memory_from_activate_map()
             total, used, free = get_mem_info()
         
         self.active_map[key] = OrtWrapper(onnxfile)

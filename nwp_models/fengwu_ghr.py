@@ -3,21 +3,19 @@ import onnxruntime as ort
 import numpy as np
 import os
 from loguru import logger
-from .memory_pool import MemoryPoolSimple
-from .utils import get_mem_info
+from .memory_pool import MemoryPoolSimple, get_mem_info
 
 class FengWu_GHR:
     
     def __init__(self, pool: MemoryPoolSimple, onnxdir: str, onnx_keys:list):
         assert os.path.isdir(onnxdir)
-        self._pool = pool
+        self.memory_pool = pool
         self.onnx_keys = onnx_keys
         
         for key in onnx_keys:
             filepath = os.path.join(onnxdir, f'{key}.onnx')
-            self._pool.submit(key, filepath)
-        self.past_allocated_memory = 0         
-        
+            self.memory_pool.submit(key, filepath)
+
     def one_step(self, inputs={'input':np.array, 
                                'step': np.array}):
         import time 
@@ -26,16 +24,15 @@ class FengWu_GHR:
         st=time.time()
         for key in  self.onnx_keys:
 
-            handler = self._pool.fetch(key)
+            handler = self.memory_pool.fetch(key)
+            
+            total, used_before, free = get_mem_info()
             x = handler.forward(x)
             # print(x['output'])
-            total, used, free = get_mem_info()
-            self._pool.wait_map[key]['memory_need'] = used-self.past_allocated_memory
-            self.past_allocated_memory = used
-        #import pdb
-        #pdb.set_trace()    
+            total, used_after, free = get_mem_info()
+            self.memory_pool.update_memoty_need(key, (used_after-used_before))
+    
         print(f'one step time is {time.time()-st}')
-            # if 'block_3' in key:
-            #     import pdb
-            #     pdb.set_trace()  
+
+        self.memory_pool.first_infrence=False
         return x

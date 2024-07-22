@@ -1,6 +1,5 @@
 onnx_dir = 'onnx/meta_model_0.25/'
 onnx_keys = ['encoder'] + [f'block_{i}' for i in range(0,30)]  + ['decoder'] #['encoder'] + 
-poolsize_GB = 80     #'onnxruntime memory pool size. default value is 32GB'
 temperature = 0.1    #'factor to scale up logits, 1.0 means no warp. use `0.1` by default.')
 fp16 = True          #'enable fp16 inference, default True.'
 
