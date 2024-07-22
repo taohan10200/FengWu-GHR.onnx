@@ -27,7 +27,7 @@ class OrtWrapper:
         print(self.sess.get_providers())
         
         # model_onnx = onnx.load(onnxfile)    #load onnx    
-        # print(onnx.helper.printable_graph(model_onnx.graph))    # 打印onnx网络
+        # print(onnx.helper.printable_graph(model_onnx.graph))    #
         
         self.inputs_names = [input.name for input in self.sess.get_inputs()]
         self.output_names = [output.name for output in self.sess.get_outputs()]
