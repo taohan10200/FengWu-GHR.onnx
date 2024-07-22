@@ -22,7 +22,7 @@ class FengWu_GHR_Inference:
             logger.error('{} not exist'.format(onnxdir))
         assert os.path.isdir(onnxdir)
 
-        pool = MemoryPoolSimple(cfg.poolsize_GB)
+        pool = MemoryPoolSimple(args.max_gpu_memory)
         self.model = FengWu_GHR(pool, onnxdir, cfg.onnx_keys)
 
         
@@ -133,11 +133,6 @@ class FengWu_GHR_Inference:
                 input_initial_field.append(data[None,:,:])
 
         for vname in self.cfg.vnames.get('single'):
-            # try:
-            #     data = np.load(f'./data/input/era5/{timestamp}/{vname}.npy')
-            # except Exception as e:
-            #     print("An error occurred:", e)
-            #     raise SystemExit("Program terminated due to an error.")
             data = surface_data[vname].data
             if vname == 'tp':
                 data =  data*1000  # if the unit is meter, please transfer it to millmeter
@@ -186,8 +181,8 @@ def parse_args():
                         type=int,
                         help='The size of cpu/gpu memory allocated for inference.')
     parser.add_argument('--max_gpu_memory',
-                        default=None,
-                        type=80,   #unit GB
+                        default=80, #unit 80GB
+                        type=int,  
                         help='The maximum of gpu memory for your device.')
     parser.add_argument('--timestamp',
                         default='2023-06-01T00:00:00',

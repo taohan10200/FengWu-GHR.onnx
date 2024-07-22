@@ -91,6 +91,9 @@ $ FengWu-GHR.onnx/
 │           ├── ...
 │           └── encoder.onnx
 │     └── ghr_0.09/
+│           ├── block_0.onnx
+│           ├── ...
+│           └── encoder.onnx
 ├── fengwu_ghr_inference_9km.py
 ├── fengwu_ghr_inference_25km.py
 ├── LICENSE
