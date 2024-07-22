@@ -19,7 +19,6 @@ onnxconverter_common==1.14.0
 onnxruntime_gpu==1.16.3
 onnxsim==0.4.36
 pandas==2.0.3
-psutil==5.9.5
 psutil==5.9.6
 pynvml==11.5.0
 pytz==2023.3
@@ -29,4 +28,4 @@ tqdm==4.66.4
 tvm==1.0.0
 urllib3==1.26.16
 xarray==2023.7.0
-ecmwflibs
+ecmwflibs==0.5.3

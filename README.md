@@ -32,7 +32,7 @@ We now support two version of FengWu-GHR:
 ```bash
 $ git clone https://github.com/taohan10200/FengWu-GHR.onnx.git
 $ conda create -n fengwu_ghr python=3.10 -y
-$ source activate fengwu_ghr
+$ conda activate fengwu_ghr
 $ python3 -m pip install -r requirements.txt
 ```
 ### 2. Download the Pretrained ONNX model.
