@@ -76,7 +76,7 @@ Data variables: (12/16)
 > If you are with diffculties to get the high-reslolution analysis data. We here also provide a  portable way to download the EAR5 data as initial field. 
 
 ```python
-ython tools/era5_downloader.py --time_stamp='2024-07-01T00:00:00' --local_root='./data/input/era5'
+python tools/era5_downloader.py --time_stamp='2024-07-01T00:00:00' --local_root='./data/input/era5'
 ```
 ### 4.  Organize your project as following structure.
 ```

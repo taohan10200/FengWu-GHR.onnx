@@ -68,17 +68,14 @@ class era5_downloader():
                 #   "I would like to download it again !!!".format(file_key))
         self.cdsapi_client.retrieve(self.ecmwf_dataset_single, request_dic, file_name)
 
-        # self.save(time_required, file_key)
-        # else:
-        #     print("{} has been fully downloaded, No need to down it again !!!".format(file_name))
 
-
-        
-        
+            
         start_time  = datetime.strptime(f"{time_required['year']}-{time_required['month']}-{time_required['day']} {time_required['time']}", "%Y-%m-%d %H:%M:%S")
 
         request_dic.update({'variable':['total_precipitation']})
         ds = xr.open_dataset(f"{prefix}_single{extension}")
+
+        tp_list = [ds["tp"].copy()]
         for i in range(1,6):
             time_require = str(start_time-timedelta(hours=i))
             yy, mm, dd, hh = self.get_yy_mm_dd_hh(time_require)
@@ -89,14 +86,18 @@ class era5_downloader():
             if self.check_filesize(request_dic, self.ecmwf_dataset_single, tp_file_name) is False:
                 self.cdsapi_client.retrieve(self.ecmwf_dataset_single, request_dic, tp_file_name)
             ds1 = xr.open_dataset(tp_file_name)
+            tp_list.append(ds1["tp"].copy())
 
-            ds['tp'].data = ds['tp'].data+ ds1['tp'].data 
-            
             os.remove(tp_file_name)          
-        # import pdb
-        # pdb.set_trace()    
-        ds.rename_vars({'tp': 'tp6h'})
-        ds.to_netcdf(f"{prefix}_single{extension}")
+ 
+        combined_tp = xr.concat(tp_list, dim="time")
+        summarized_tp = combined_tp.sum(dim="time")
+
+        combined_dataset = ds.copy()
+        combined_dataset = combined_dataset.assign(tp=summarized_tp)
+        
+        combined_dataset = combined_dataset.rename({'tp': 'tp6h'})
+        combined_dataset.to_netcdf(f"{prefix}_single{extension}")
         
         return True
 

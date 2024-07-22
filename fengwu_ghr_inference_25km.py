@@ -116,11 +116,11 @@ class FengWu_GHR_Inference:
         input_initial_field=[]
         try:
             pressure_data = xr.open_dataset(f'./data/input/era5/{timestamp[:4]}/{timestamp}_pressure.nc', 
-                                        engine='cfgrib',
-                                        backend_kwargs={'indexpath': ''})
+                                        engine='netcdf4',
+                      )
             surface_data = xr.open_dataset(f'./data/input/era5/{timestamp[:4]}/{timestamp}_single.nc', 
-                            engine='cfgrib',
-                            backend_kwargs={'indexpath': ''})
+                            engine='netcdf4',
+        )
         except Exception as e:
             print("An error occurred:", e)
             raise SystemExit("Program terminated due to an error.")
@@ -129,7 +129,7 @@ class FengWu_GHR_Inference:
         for vname in self.cfg.vnames.get('pressure'):
             vname_data = pressure_data[vname]
             for height in self.cfg.pressure_level:
-                data = vname_data.sel(isobaricInhPa=height).data
+                data = vname_data.sel(level=height).data
                 input_initial_field.append(data[None,:,:])
 
         for vname in self.cfg.vnames.get('single'):
