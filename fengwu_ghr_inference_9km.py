@@ -65,10 +65,8 @@ class FengWu_GHR_Inference:
         Returns:
             outputs: 
         """
-        # embed space
+
         inputs = self.read_initial_field(timestamp)[None,:,:,:] #4D input: [batch_size, vname_number, H, W]
-        #import pdb
-        #pdb.set_trace()
 
         outputs = inputs
         prediction = {}
@@ -100,8 +98,10 @@ class FengWu_GHR_Inference:
             new_dt = datetime.fromisoformat(timestamp) + timedelta(hours=6)
             timestamp = new_dt.isoformat()
             
-            prediction.update({timestamp: self.de_normalization(np.copy(outputs.astype(np.float32)))})
+            outputs_ = self.de_normalization(np.copy(outputs.astype(np.float32)))
 
+            
+            prediction.update({timestamp: self.check_output(outputs_)})
 
             datasample = {
                             'pred_label':prediction,
@@ -141,12 +141,19 @@ class FengWu_GHR_Inference:
         
         return self.normalization(input_initial_field)
     
+    def check_output(self, outputs_):
+        self.output_shape = (2001, 4000)
+        zoom_factors = (1, 1, self.output_shape[0] / outputs_.shape[2], 
+                        self.output_shape[1] / outputs_.shape[3])
+        outputs_ = zoom(outputs_, zoom_factors, order=2) 
+        return outputs_
+    
     def check_input(self, vdata):
         self.input_shape = (721*3, 1440*3) 
         vdata = zoom(vdata, 
                         ( self.input_shape[0] / vdata.shape[0],
                          self.input_shape[1] / vdata.shape[1]),
-                        order=0)  #
+                        order=2)  #
         return vdata
     
     def normalization(self, data):
