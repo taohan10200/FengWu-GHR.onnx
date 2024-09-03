@@ -4,7 +4,7 @@ import xarray as xr
 import pandas as pd
 
 save_root = './data/shanxi'
-initial_time = '2023-06-01T00:00:00'
+initial_time = '2023-07-08T00:00:00'
 input_root = f'./data/output/{initial_time}'
 os.makedirs(save_root, exist_ok=True)
 lat_west, lat_east = (100, 120)

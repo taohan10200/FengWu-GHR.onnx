@@ -9,10 +9,12 @@ We now support two version of FengWu-GHR:
 | Model |Resolution | Precision | Size | Pretrained Model | Demo |
 | :-: | :-: | :-: |:-: | :-: | :-: |
 | FengWu-GHR (meta_model_0.25°)| 721x1440, 0.25°| fp16 | 9.0GB | [OneDrive](https://hkustconnect-my.sharepoint.com/:u:/g/personal/thanad_connect_ust_hk/EYY_VIxLltlMvkqG-1T6IBEBXYcPWHF5PwKrUL2TJfTt2g?e=pQbJHo) | [fengwu_ghr_inference_25km.py](./fengwu_ghr_inference_25km.py) |
-| FengWu-GHR (GHR_0.09° ) |  2001x4000, 0.09° | fp16 |6.5GB |Send email to [Lei Bai](mailto:baisanshi@gmail.com) and cc to [Tao Han](mailto:hantao10200@gmail.com)| [fengwu_ghr_inference_9km.py](./fengwu_ghr_inference_9km.py) |
+| FengWu-GHR (0.09° ) |  2001x4000, 0.09° | fp16 |6.5GB |Send email to [Lei Bai](mailto:baisanshi@gmail.com) and cc to [Tao Han](mailto:hantao10200@gmail.com)| [fengwu_ghr_inference_9km.py](./fengwu_ghr_inference_9km.py) |
 
 
 ## News
+2024/09/03 Fix the checkerboard effect (caused by a wrong implementation during the exporting of onnx):
+
 2024/07/12 add FengWu-GHR (full model) onnx-fp16 model :star:
 
 2024/04/04 add FengWu-GHR (Meta Model) onnx-fp16 model and its demos :star:
@@ -100,7 +102,7 @@ $ FengWu-GHR.onnx/
 └── README.md
 
 ```
-### 5. Run the inference and demos script
+### 5. 10-days Inference 
 ```bash
 ## Inference for high resolution forecast: 0.09x0.09 
 $ python -u fengwu_ghr_inference_9km.py --timestamp=2024-07-08T18:00:00  --config=config/fengwu_ghr_cfg_74v_0.09.py --gpu=0
@@ -111,6 +113,14 @@ python -u fengwu_ghr_inference_25km.py --timestamp=2024-07-01T00:00:00 --config=
 
 # Try more options
 $ python -u fengwu_ghr_inference.py --help
+```
+### 6. Plot demo
+```bash
+# for analysis initial field
+python -u plot_demo_gif.py --timestamp=2024-07-08T18:00:00 --dataset=analysis --inference_steps=40
+
+# for ERA5 initial field
+python -u plot_demo_gif.py --timestamp=2024-07-08T18:00:00 --dataset=era5 --inference_steps=40
 ```
 
 Reminder: After runing this script, the forecast results will be saved as `netcdf` format in `data/output/${timestamp}`. Feel free to change the  `inference_steps` and `save_cfg` in [fengwu_ghr_cfg.py](./config/fengwu_ghr_cfg.py) for rollout length and saved variables.  

@@ -130,10 +130,14 @@ class FengWu_GHR_Inference:
             vname_data = pressure_data[vname]
             for height in self.cfg.pressure_level:
                 data = vname_data.sel(level=height).data
+                data = data.squeeze() if data.ndim==3 else data
+                assert  data.ndim==2
                 input_initial_field.append(data[None,:,:])
 
         for vname in self.cfg.vnames.get('single'):
             data = surface_data[vname].data
+            data = data.squeeze() if data.ndim==3 else data
+            assert  data.ndim==2
             if vname == 'tp':
                 data =  data*1000  # if the unit is meter, please transfer it to millmeter
             input_initial_field.append(data[None,:,:])

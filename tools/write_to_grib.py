@@ -29,7 +29,6 @@ grib_para = {
 "ssr": {"Name":"Surface net short-wave (solar) radiation", "ShortName":"ssr",   'Unit':"J m-2",  "ParaID": 176},
 "ssr6h": {"Name":"Surface net short-wave (solar) radiation (6 hour)", "ShortName":"ssr6h",   'Unit':"J m-2",  "ParaID": 176},
 }
-
 def write_grib(data_sample: Union[torch.Tensor, np.ndarray], 
                save_root: Union[str,Path]=None, 
                channels_to_vname: Dict=None, 
@@ -163,8 +162,7 @@ def write_grib(data_sample: Union[torch.Tensor, np.ndarray],
                 print(f'upload the {s3_uri} to ceph!!!!')
                 
             # ========================== surface prediction=========================
-            #import pdb
-            #pdb.set_trace()
+
             ds = xr.Dataset(
                 {
                 ShortName: xr.DataArray(
@@ -194,7 +192,7 @@ def write_grib(data_sample: Union[torch.Tensor, np.ndarray],
                         },
                 attrs={
                     "GRIB_edition": 2,
-                    "description": "Prediction of AI-based NWP model: FengWu-v2",
+                    "description": "Prediction of AI-based NWP model: FengWu-GHR",
                     "institution": "Shanghai Ailab",
                     "contact": "Tao Han@hantao10200@gmail.com",
                     "initial_time": f'Initiai filed time: {initial_time}',
@@ -256,8 +254,8 @@ def write_grib(data_sample: Union[torch.Tensor, np.ndarray],
                     },
             attrs={
                 "GRIB_edition": 2,
-                "description": "Prediction of AI-based NWP model: FengWu-GHR",
-                "institution": "Shanghai Ailab",
+                "description": "Forecasts of AI-based NWP model: FengWu-GHR",
+                "institution": "Shanghai AILab",
                 "contact": "Tao Han@hantao10200@gmail.com",
                 "history": f"First generate at:{generate_time}"
             }

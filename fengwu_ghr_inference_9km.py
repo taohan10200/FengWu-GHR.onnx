@@ -6,16 +6,18 @@ import numpy as np
 import xarray as xr
 from loguru import logger
 from nwp_models import FengWu_GHR
-from nwp_models import MemoryPoolSimple, npsoftmax, npmultinominal2D
+from nwp_models import MemoryPoolSimple
 from mmengine.config import Config, DictAction
 from datetime import datetime, timedelta
 from tools.write_to_grib import write_grib
-from tools.plot_demo_gif import plot_pressure_demo_gif, plot_surface_demo_gif
 from scipy.ndimage import zoom
 
 class FengWu_GHR_Inference:
     def __init__(self, args, cfg: dict = {}):
         self.cfg = cfg
+        self.dataset = self.cfg.dataset
+        self.output_root = os.path.join(self.cfg.save_cfg.save_path, self.dataset)
+        
         onnxdir = cfg.onnx_dir
         if not os.path.exists(onnxdir):
             logger.error('{} not exist'.format(onnxdir))
@@ -27,8 +29,8 @@ class FengWu_GHR_Inference:
         
         self.level_mapping =  [cfg.total_levels.index(val) for val in cfg.pressure_level if val in cfg.total_levels ]
         self.mean, self.std = self.get_mean_std() #read the channel-wise mean and std according to the defined variable in configuration.
-        self.channels_to_vname = self.get_meta_info()
-
+        self.channels_to_vname, self.vname_to_channels = self.channel_vname_mapping()
+        self.input_shape = cfg.input_shape
         
     def get_mean_std(self):
         with open('./nwp_models/mean_std.json',mode='r') as f:
@@ -54,20 +56,19 @@ class FengWu_GHR_Inference:
         return inputs
 
     def inference(self, 
-                  timestamp:str, 
-                  rollout_time: str):
+                  timestamp:str):
         """_summary_
 
         Args:
             timestamp: the timestamp of the initial field. Defaults to str.
-            rollout_time: time length of extrapolation. Defaults to None.
-
         Returns:
             outputs: 
         """
 
-        inputs = self.read_initial_field(timestamp)[None,:,:,:] #4D input: [batch_size, vname_number, H, W]
-
+        if self.dataset == 'era5':
+            inputs = self.reada_era5_initial_field(timestamp)[None,:,:,:] #4D input: [batch_size, vname_number, H, W]
+        else:
+            inputs = self.read_analysis_initial_field(timestamp)[None,:,:,:] #4D input: [batch_size, vname_number, H, W]
         outputs = inputs
         prediction = {}
         in_time_stamp = timestamp
@@ -77,7 +78,7 @@ class FengWu_GHR_Inference:
                      'in_time_stamp':in_time_stamp
                     }
         write_grib(datasample_initial, 
-                   save_root = self.cfg.save_cfg.save_path, 
+                   save_root = self.output_root, 
                    channels_to_vname = self.channels_to_vname, 
                    filter_dict = self.cfg.save_cfg.variables_list)
         
@@ -101,7 +102,7 @@ class FengWu_GHR_Inference:
             outputs_ = self.de_normalization(np.copy(outputs.astype(np.float32)))
 
             
-            prediction.update({timestamp: self.check_output(outputs_)})
+            prediction.update({timestamp: self.process_output(outputs_)})
 
             datasample = {
                             'pred_label':prediction,
@@ -109,20 +110,56 @@ class FengWu_GHR_Inference:
                           }
 
             write_grib(datasample, 
-                       save_root = self.cfg.save_cfg.save_path, 
+                        save_root = self.output_root, 
                        channels_to_vname=self.channels_to_vname, 
                        filter_dict = self.cfg.save_cfg.variables_list)
             
         return prediction
 
-    def read_initial_field(self, timestamp):
+    def reada_era5_initial_field(self, timestamp):
+        input_initial_field=[]
+        try:
+            pressure_data = xr.open_dataset(f'./data/input/era5/{timestamp[:4]}/{timestamp}_pressure.nc', 
+                                        engine='netcdf4',
+                      )
+            surface_data = xr.open_dataset(f'./data/input/era5/{timestamp[:4]}/{timestamp}_single.nc', 
+                            engine='netcdf4',
+        )
+        except Exception as e:
+            print("An error occurred:", e)
+            raise SystemExit("Program terminated due to an error.")
+      
+
+        for vname in self.cfg.vnames.get('pressure'):
+            vname_data = pressure_data[vname]
+            for height in self.cfg.pressure_level:
+                vdata = vname_data.sel(level=height).data
+                vdata = vdata.squeeze() if vdata.ndim==3 else vdata
+                vdata = self.check_input(vdata)
+                assert  vdata.ndim==2
+                input_initial_field.append(vdata[None,:,:])
+
+        for vname in self.cfg.vnames.get('single'):
+            vdata = surface_data[vname].data
+            vdata = vdata.squeeze() if vdata.ndim==3 else vdata
+            vdata = self.check_input(vdata)
+            assert  vdata.ndim==2
+            if 'tp' in vname:
+                vdata =  vdata*1000  # if the unit is meter, please transfer it to millmeter
+            input_initial_field.append(vdata[None,:,:])
+        
+        input_initial_field = np.concatenate(input_initial_field, axis=0)
+        
+        return self.normalization(input_initial_field)
+            
+    def read_analysis_initial_field(self, timestamp):
         input_initial_field=[]
         try:
             data = xr.open_dataset(f'./data/input/analysis/{timestamp}.grib')
         except Exception as e:
             print("An error occurred:", e)
             raise SystemExit("Program terminated due to an error.")
-      
+ 
         for vname in self.cfg.vnames.get('pressure'):
             vname_data = data[vname]
             for height in self.cfg.pressure_level:
@@ -133,28 +170,33 @@ class FengWu_GHR_Inference:
         for vname in self.cfg.vnames.get('single'):
             vdata = data[vname].data
             vdata = self.check_input(vdata)
-            if vname == 'tp':
+
+            if 'tp' in vname:
                 vdata =  vdata*1000  # if the unit is meter, please transfer it to millmeter
+
             input_initial_field.append(vdata[None,:,:])
         
         input_initial_field = np.concatenate(input_initial_field, axis=0)
-        
         return self.normalization(input_initial_field)
     
-    def check_output(self, outputs_):
-        self.output_shape = (2001, 4000)
-        zoom_factors = (1, 1, self.output_shape[0] / outputs_.shape[2], 
-                        self.output_shape[1] / outputs_.shape[3])
-        outputs_ = zoom(outputs_, zoom_factors, order=2) 
-        return outputs_
     
     def check_input(self, vdata):
-        self.input_shape = (721*3, 1440*3) 
         vdata = zoom(vdata, 
                         ( self.input_shape[0] / vdata.shape[0],
                          self.input_shape[1] / vdata.shape[1]),
-                        order=2)  #
+                        order=1)  #
         return vdata
+    
+    def process_output(self, outputs_):
+        self.output_shape = (2001, 4000)
+        zoom_factors = (1, 1, self.output_shape[0] / outputs_.shape[2], 
+                        self.output_shape[1] / outputs_.shape[3])
+        outputs_ = zoom(outputs_, zoom_factors, order=1) 
+        no_less_than_zero = ['ssr', 'tp6h', 'tp']
+        for i in no_less_than_zero:
+            idx = self.vname_to_channels.get('ssr')
+            outputs_[:, idx, :, :][outputs_[:, idx, :, :] < 0] = 0
+        return outputs_
     
     def normalization(self, data):
         data -= self.mean[:,np.newaxis,np.newaxis]
@@ -166,17 +208,20 @@ class FengWu_GHR_Inference:
         data += self.mean[np.newaxis,:,np.newaxis,np.newaxis]
         return data   
     
-    def get_meta_info(self):
-        channels_to_vname = {}
+    def channel_vname_mapping(self):
+        channels_to_vname={}
+        vname_to_channels={}
         ch_idx = 0
         for v in self.cfg.vnames.get('pressure'):
             for level in self.cfg.pressure_level:
                 channels_to_vname.update({ch_idx: v+'_'+str(int(level)) })
+                vname_to_channels.update({v+'_'+str(int(level)): ch_idx })
                 ch_idx += 1
         for v in self.cfg.vnames.get('single'):
             channels_to_vname.update({ch_idx: v })
+            vname_to_channels.update({v: ch_idx})
             ch_idx += 1
-        return channels_to_vname
+        return channels_to_vname, vname_to_channels
          
     
 def parse_args():
@@ -207,6 +252,11 @@ def parse_args():
                         type=int,
                         help='The timestamp of the initial field.'
                         )
+    parser.add_argument('--dataset',
+                        default=None,
+                        type=str,
+                        help='The datasource of the initial field. Both ERA5 and analysis from EC are supported.'
+                        )
     parser.add_argument(
     '--cfg-options',
     nargs='+',
@@ -235,27 +285,9 @@ def main():
                     args=args,
                     cfg=cfg
                     )
-    # np.random.seed(42)
-    # data = np.random.rand(1,74, 721, 1440).astype(np.float16)
-    # data = np.ones((1,74, 721, 1440)).astype(np.float16)
-    # data = np.random.rand(1,7200, 3072).astype(np.float16)
-    
-    FengWu_GHR.inference(args.timestamp, np.array(0, dtype=np.int64))
-    
-    # plot_pressure_demo_gif(initial_timestamp=args.timestamp, 
-    #               steps=cfg.inference_steps, 
-    #               plot_variable={'z':[850,500],
-    #                              'q':[850,500],
-    #                              'u':[850,500],
-    #                              'v':[850,500],
-    #                              't':[850,500],
-    #                              }
-    #                 )
-    
-    # plot_surface_demo_gif(initial_timestamp=args.timestamp, 
-    #               steps=12, 
-    #               plot_variable=['sp','v10','v100', 't2m','tp6h', 'msl']
-    #                             )
+
+    FengWu_GHR.inference(args.timestamp)
+
 
 if __name__ == '__main__':
     main()
