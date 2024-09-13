@@ -139,7 +139,7 @@ def plot_pressure_demo_gif(initial_timestamp:str,
 
                 # Plot real image
                 im2 = ax2.imshow(real_data,cmap=color_bar.get(vname.split('_')[0], None), extent=[0, 360, -90, 90], transform=ccrs.PlateCarree())
-                ax2.set_title(f'Truth: ERA5 Ranalysis (upsample to 0.09°)', fontsize=fontsize,)
+                ax2.set_title(f'Truth: ERA5 (upsample to 0.09°)', fontsize=fontsize,)
                 ax2.set_axis_off()
 
 
@@ -270,8 +270,8 @@ def plot_surface_demo_gif(initial_timestamp:str,
                     
    
     # generate GIF image
-    os.makedirs(f'./data/demos/',exist_ok=True)
-    save_path = f'./data/demos/surface_forecast_vs_real.gif'
+    os.makedirs(f'./demos/',exist_ok=True)
+    save_path = f'./demos/surface_forecast_vs_real.gif'
     imageio.mimsave(save_path, images, fps=2)
     # compress_gif(save_path,save_path)
 def parse_args():

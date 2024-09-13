@@ -104,6 +104,9 @@ $ FengWu-GHR.onnx/
 ```
 ### 5. 10-days Inference 
 ```bash
+# run 0.09 from torch model
+python -u fengwu_ghr_inference_torch.py --timestamp=2024-07-08T18:00:00 --config=config/fengwu_ghr_cfg_74v_0.09_torch.py  --gpu=0
+
 ## Inference for high resolution forecast: 0.09x0.09 
 $ python -u fengwu_ghr_inference_9km.py --timestamp=2024-07-08T18:00:00  --config=config/fengwu_ghr_cfg_74v_0.09.py --gpu=0
 
@@ -150,23 +153,23 @@ save_cfg = dict(
 The following are demos of 10-days lead forecasting after running above script:
 
 ### Demo 1: Some Surface Variables: `10 meter wind (v10), 100 meter wind (v100), 2 meter temperature (t2m), surface pressure (sp), 6-hour precipitation (tp6h), mean sea-level pressure (msl)`
-![surface](./data/demos/surface_forecast_vs_real.gif)
+![surface](./demos/surface_forecast_vs_real.gif)
 
 ### Demo 2: Geopotential
-![z](./data/demos/z_forecast_vs_real.gif)
+![z](./demos/z_forecast_vs_real.gif)
 
 ### Demo 3: Specific Humidity
-![q](./data/demos/q_forecast_vs_real.gif)
+![q](./demos/q_forecast_vs_real.gif)
 
 ### Demo 4: U Component of Wind
-![u_wind](./data/demos/u_forecast_vs_real.gif)
+![u_wind](./demos/u_forecast_vs_real.gif)
 
 
 ### Demo 5: V Component of Wind
-![v_wind](./data/demos/v_forecast_vs_real.gif)
+![v_wind](./demos/v_forecast_vs_real.gif)
 
 ### Demo 6: Temperature
-![t](./data/demos/t_forecast_vs_real.gif)
+![t](./demos/t_forecast_vs_real.gif)
 
 
 
