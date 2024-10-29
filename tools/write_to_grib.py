@@ -52,10 +52,7 @@ def write_grib(data_sample: Union[torch.Tensor, np.ndarray],
         
     save_path:  'pangu'
     
-    s3_client:              
-        s3_cfg =dict(
-            internal_ak_sk = 'ai4earth',
-            bucket_name='nwp_predictions',
+    s3_client:      
             endpoint='http://10.140.31.254'),
             
         s3_client(*s3_cfg)

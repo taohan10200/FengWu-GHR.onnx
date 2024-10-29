@@ -1,4 +1,4 @@
-checkpoint_dir = 'onnx/74v_1step/iter_19000.pth'
+checkpoint_dir = 'onnx/74v_1step/iter_9000_sep.pth'
 onnx_keys = ['encoder'] + [f'block_{i}' for i in range(0,30)]  + ['decoder'] #['encoder'] + 
 
 fp16 = True          #'enable fp16 inference, default True.'
@@ -15,7 +15,7 @@ vnames=dict(
     pressure=['z','q', 'u', 'v', 't'],
     single=['v10','u10','v100', 'u100', 't2m','tcc', 'sp','tp6h', 'msl']) #'tisr',
 
-inference_steps = 40 # one step is 6 hour interval
+inference_steps = 60 # one step is 6 hour interval
 
 backbone=dict(
     arch = 'vit_huge',

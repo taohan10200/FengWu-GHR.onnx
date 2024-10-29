@@ -24,16 +24,21 @@ class FengWu_GHR_Inference:
         checkpoint_dir = cfg.checkpoint_dir
         if not os.path.exists(checkpoint_dir):
             logger.error('{} not exist'.format(checkpoint_dir))
-
-        # pool = MemoryPoolSimple(cfg.poolsize_GB)
-        self.model = FengWu_Hres_Lora(**cfg.backbone).cuda().eval()
-        self.load_state_dict()
-        self.model.half()
-
         
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        logger.info(f'The inference is performed on {self.device}')
+        # pool = MemoryPoolSimple(cfg.poolsize_GB)
+        self.model = FengWu_Hres_Lora(**cfg.backbone).to(self.device).eval()
+        self.load_state_dict()
+        if self.cfg.fp16:
+            self.model.half()
+
+
         self.level_mapping =  [cfg.total_levels.index(val) for val in cfg.pressure_level if val in cfg.total_levels ]
         self.mean, self.std = self.get_mean_std() #read the channel-wise mean and std according to the defined variable in configuration.
-
+        self.mean = torch.tensor(self.mean[None,:,None,None]).to(self.device)
+        self.std =  torch.tensor(self.std[None,:,None,None]).to(self.device)
+        
         self.channels_to_vname, self.vname_to_channels = self.channel_vname_mapping()
                 
         self.input_shape = cfg.input_shape
@@ -92,23 +97,22 @@ class FengWu_GHR_Inference:
             outputs: 
         """
         if self.dataset == 'era5':
-            inputs = self.reada_era5_initial_field(timestamp)[None,:,:,:] #4D input: [batch_size, vname_number, H, W]
+            inputs = self.reada_era5_initial_field(timestamp) #4D input: [batch_size, vname_number, H, W]
         else:
-            inputs = self.read_analysis_initial_field(timestamp)[None,:,:,:] #4D input: [batch_size, vname_number, H, W]
+            inputs = self.read_analysis_initial_field(timestamp)#4D input: [batch_size, vname_number, H, W]
         outputs = inputs
-        prediction = {}
+ 
         in_time_stamp = timestamp
         
         datasample_initial = {
-                     'pred_label':{in_time_stamp:self.de_normalization(np.copy(inputs.astype(np.float32)))},
+                     'pred_label':{in_time_stamp:self.de_normalization(inputs.clone().float())},
                      'in_time_stamp':in_time_stamp
                     }
         write_grib(datasample_initial, 
                    save_root = self.output_root, 
                    channels_to_vname = self.channels_to_vname, 
                    filter_dict = self.cfg.save_cfg.variables_list)
-        outputs = torch.from_numpy(outputs).cuda()   
-        
+ 
         for step in range(self.cfg.inference_steps):   
             if self.cfg.fp16:
                 outputs = self.convert_to_fp16(outputs)
@@ -119,27 +123,33 @@ class FengWu_GHR_Inference:
             st = time.time()
             with torch.no_grad():
                 outputs = self.model(x['input'], step = 0)#x['step'])
+           
             et1 = time.time()
             new_dt = datetime.fromisoformat(timestamp) + timedelta(hours=6)
             timestamp = new_dt.isoformat()
-     
-            print(f'Step: {step}, Initial time: {in_time_stamp}, forecast time: {timestamp}, inference spend: {(et1-st):.2f}s')
             
-            outputs_ = self.de_normalization(np.copy(outputs.cpu().numpy().astype(np.float32)))
-            prediction.update({timestamp:self.process_output(outputs_)})
+            outputs_ = self.de_normalization(outputs.clone().float())
+            
+            print(f'Step: {step}, Initial time: {in_time_stamp}, forecast time: {timestamp}, inference spend: {(et1-st):.2f}s')
+
 
             datasample = {
-                            'pred_label':prediction,
+                            'pred_label':{timestamp:self.process_output(outputs_)},
                             'in_time_stamp':in_time_stamp
                           }
 
-            write_grib(datasample, 
-                       save_root = self.output_root, 
-                       channels_to_vname=self.channels_to_vname, 
-                       filter_dict = self.cfg.save_cfg.variables_list)
             et2 = time.time()
+
+            print(f' Post processing time is: {(et2-et1):.2f}s')
+            
+            # if step == 39:
+            write_grib(datasample, 
+                    save_root = self.output_root, 
+                    channels_to_vname=self.channels_to_vname, 
+                    filter_dict = self.cfg.save_cfg.variables_list)
+        
             print(f' forecasts are saved at {self.output_root} with nc format , save time is: {(et2-et1):.2f}s')
-        return prediction
+
     
     def reada_era5_initial_field(self, timestamp):
         input_initial_field=[]
@@ -153,27 +163,28 @@ class FengWu_GHR_Inference:
         except Exception as e:
             print("An error occurred:", e)
             raise SystemExit("Program terminated due to an error.")
-      
 
         for vname in self.cfg.vnames.get('pressure'):
             vname_data = pressure_data[vname]
             for height in self.cfg.pressure_level:
                 vdata = vname_data.sel(level=height).data
-                vdata = vdata.squeeze() if vdata.ndim==3 else vdata
+                vdata = vdata.squeeze() if vdata.ndim>=3 else vdata
+                vdata = torch.tensor(vdata[None,None,:,:]).to(self.device)
                 vdata = self.check_input(vdata)
-                assert  vdata.ndim==2
-                input_initial_field.append(vdata[None,:,:])
+                assert  vdata.ndim==4
+                input_initial_field.append(vdata)
 
         for vname in self.cfg.vnames.get('single'):
             vdata = surface_data[vname].data
-            vdata = vdata.squeeze() if vdata.ndim==3 else vdata
+            vdata = vdata.squeeze() if vdata.ndim>=3 else vdata
+            vdata = torch.tensor(vdata[None,None,:,:]).to(self.device)
             vdata = self.check_input(vdata)
-            assert  vdata.ndim==2
+            assert  vdata.ndim==4
             if 'tp' in vname:
                 vdata =  vdata*1000  # if the unit is meter, please transfer it to millmeter
-            input_initial_field.append(vdata[None,:,:])
+            input_initial_field.append(vdata)
         
-        input_initial_field = np.concatenate(input_initial_field, axis=0)
+        input_initial_field = torch.cat(input_initial_field, axis=0)
         
         return self.normalization(input_initial_field)
             
@@ -189,48 +200,56 @@ class FengWu_GHR_Inference:
             vname_data = data[vname]
             for height in self.cfg.pressure_level:
                 vdata = vname_data.sel(isobaricInhPa=height).data
+                vdata = torch.tensor(vdata[None,None,:,:]).to(self.device)
                 vdata = self.check_input(vdata)
-                input_initial_field.append(vdata[None,:,:])
+                input_initial_field.append(vdata)
 
         for vname in self.cfg.vnames.get('single'):
             vdata = data[vname].data
+            vdata = torch.tensor(vdata[None,None,:,:]).to(self.device)
             vdata = self.check_input(vdata)
 
             if 'tp' in vname:
                 vdata =  vdata*1000  # if the unit is meter, please transfer it to millmeter
 
-            input_initial_field.append(vdata[None,:,:])
+            input_initial_field.append(vdata)
         
-        input_initial_field = np.concatenate(input_initial_field, axis=0)
+        input_initial_field = torch.cat(input_initial_field, axis=1)
         return self.normalization(input_initial_field)
     
     def check_input(self, vdata):
-        vdata = zoom(vdata, 
-                        ( self.input_shape[0] / vdata.shape[0],
-                          self.input_shape[1] / vdata.shape[1]),
-                        order=1)  #
-        
+        vdata = F.interpolate( vdata, size=self.input_shape, mode='bicubic')
         return vdata
     
     def process_output(self, outputs_):
-        self.output_shape = (2001, 4000)
-        zoom_factors = (1, 1, self.output_shape[0] / outputs_.shape[2], 
-                        self.output_shape[1] / outputs_.shape[3])
-        outputs_ = zoom(outputs_, zoom_factors, order=1) 
-        no_less_than_zero = ['ssr', 'tp6h', 'tp']
+        from scipy.ndimage import uniform_filter,gaussian_filter 
+        def apply_gaussian_filter(tensor, sigma):
+            # Convert tensor to numpy array for filtering
+            tensor_np = tensor.cpu().numpy()
+            
+            # Apply Gaussian filter only on the last two dimensions
+            filtered_np = gaussian_filter(tensor_np, sigma=(0, 0, sigma, sigma))
+            
+            # Convert back to torch tensor
+            filtered_tensor = torch.from_numpy(filtered_np)
+            
+            return filtered_tensor
+        
+        outputs_ = apply_gaussian_filter(outputs_, sigma=1.5)
+        no_less_than_zero = ['tp6h']
         for i in no_less_than_zero:
-            idx = self.vname_to_channels.get('ssr')
+            idx = self.vname_to_channels.get(i)
             outputs_[:, idx, :, :][outputs_[:, idx, :, :] < 0] = 0
         return outputs_
     
     def normalization(self, data):
-        data -= self.mean[:,np.newaxis,np.newaxis]
-        data /= self.std[:,np.newaxis,np.newaxis]
+        data -= self.mean
+        data /= self.std
         return data
     
     def de_normalization(self, data):
-        data *= self.std[np.newaxis,:,np.newaxis,np.newaxis]
-        data += self.mean[np.newaxis,:,np.newaxis,np.newaxis]
+        data *= self.std
+        data += self.mean
         return data   
     
     def channel_vname_mapping(self):
@@ -274,7 +293,7 @@ def parse_args():
                         help='The timestamp of the initial field.'
                         )
     parser.add_argument('--dataset',
-                        default=None,
+                        default='analysis',
                         type=str,
                         help='The datasource of the initial field. Both ERA5 and analysis from EC are supported.'
                         )

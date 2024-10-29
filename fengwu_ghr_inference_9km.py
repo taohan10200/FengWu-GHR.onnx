@@ -192,7 +192,7 @@ class FengWu_GHR_Inference:
         zoom_factors = (1, 1, self.output_shape[0] / outputs_.shape[2], 
                         self.output_shape[1] / outputs_.shape[3])
         outputs_ = zoom(outputs_, zoom_factors, order=1) 
-        no_less_than_zero = ['ssr', 'tp6h', 'tp']
+        no_less_than_zero = [ 'tp6h']
         for i in no_less_than_zero:
             idx = self.vname_to_channels.get('ssr')
             outputs_[:, idx, :, :][outputs_[:, idx, :, :] < 0] = 0
