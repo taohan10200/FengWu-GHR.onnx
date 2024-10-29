@@ -9,7 +9,7 @@ __pycache__
 *tools/shanxi
 *tools/shanghai
 *tools/shanxi
-
+*demos
 *script
 nwp_models/fengwu_ghr_lora.py
 nwp_models/lora.py
