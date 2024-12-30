@@ -11,11 +11,15 @@ from datetime import datetime, timedelta
 from tools.write_to_grib import write_grib
 from scipy.ndimage import zoom
 import torch.nn.functional as F
+import pandas as pd
 import time
-from nwp_models.fengwu_ghr_lora import FengWu_Hres_Lora
-
-
-
+from nwp_models.fengwu_ghr_lora_v1 import FengWu_Hres_Lora_v1
+from nwp_models.fengwu_ghr_lora_v2 import FengWu_Hres_Lora_v2
+from collections import OrderedDict
+try:
+    from nwp.datasets.s3_client import s3_client
+except:
+    s3_client = None
 class FengWu_GHR_Inference:
     def __init__(self, cfg: dict = {}):
         self.cfg = cfg
@@ -28,9 +32,15 @@ class FengWu_GHR_Inference:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         logger.info(f'The inference is performed on {self.device}')
         # pool = MemoryPoolSimple(cfg.poolsize_GB)
-        self.model = FengWu_Hres_Lora(**cfg.backbone).to(self.device).eval()
+        version =  cfg.get('version', 'v1')
+        if version=='v1':
+            self.model = FengWu_Hres_Lora_v1(**cfg.backbone).to(self.device).eval()
+        elif version=='v2':
+            self.model = FengWu_Hres_Lora_v2(**cfg.backbone).to(self.device).eval()
+            
+        logger.info(f'The version is FengWu-GHR_{version}')
         self.load_state_dict()
-        if self.cfg.fp16:
+        if cfg.fp16:
             self.model.half()
 
 
@@ -42,22 +52,28 @@ class FengWu_GHR_Inference:
         self.channels_to_vname, self.vname_to_channels = self.channel_vname_mapping()
                 
         self.input_shape = cfg.input_shape
-        
+        self.load_data_from_ceph = s3_client() if s3_client else None
     def load_state_dict(self):
         pretrained_dict = torch.load(self.cfg.checkpoint_dir, map_location='cpu'
                                 )['state_dict']
         model_dict = self.model.state_dict()
 
-        pretrained_dict_filter ={}
+        pretrained_dict_filter = OrderedDict() 
         for k, v in pretrained_dict.items():
             if k[9:] in model_dict.keys():
+                # if 'mlp_hres' not in k:
                 pretrained_dict_filter.update({k[9:]: v})
-        print(
-                "Missing keys: {}".format(list(set(model_dict) - set(pretrained_dict_filter)
-                                               )))
+        # Find missing keys in the model's state_dict
+        missing_keys = [k for k in model_dict.keys() if k not in pretrained_dict_filter]
+        
+        # Output missing keys
+        print("Missing keys in pretrained_dict_filter:")
+        for key in missing_keys:
+            print(key)
+            
         model_dict.update(pretrained_dict_filter)
 
-        self.model.load_state_dict(model_dict, strict=True)
+        self.model.load_state_dict(pretrained_dict_filter, strict=False)
         
         
     def get_mean_std(self):
@@ -97,7 +113,7 @@ class FengWu_GHR_Inference:
             outputs: 
         """
         if self.dataset == 'era5':
-            inputs = self.reada_era5_initial_field(timestamp) #4D input: [batch_size, vname_number, H, W]
+            inputs = self.read_era5_initial_field(timestamp) #4D input: [batch_size, vname_number, H, W]
         else:
             inputs = self.read_analysis_initial_field(timestamp)#4D input: [batch_size, vname_number, H, W]
         outputs = inputs
@@ -111,7 +127,8 @@ class FengWu_GHR_Inference:
         write_grib(datasample_initial, 
                    save_root = self.output_root, 
                    channels_to_vname = self.channels_to_vname, 
-                   filter_dict = self.cfg.save_cfg.variables_list)
+                   filter_dict = self.cfg.save_cfg.variables_list,
+                   region = self.cfg.save_cfg.region if 'region' in self.cfg.save_cfg else None)
  
         for step in range(self.cfg.inference_steps):   
             if self.cfg.fp16:
@@ -130,7 +147,7 @@ class FengWu_GHR_Inference:
             
             outputs_ = self.de_normalization(outputs.clone().float())
             
-            print(f'Step: {step}, Initial time: {in_time_stamp}, forecast time: {timestamp}, inference spend: {(et1-st):.2f}s')
+            print(f'Step: {step}, Initial T: {in_time_stamp}, forecast T: {timestamp}, inference speed: {(et1-st):.2f}s')
 
 
             datasample = {
@@ -142,16 +159,17 @@ class FengWu_GHR_Inference:
 
             print(f' Post processing time is: {(et2-et1):.2f}s')
             
-            # if step == 39:
+         
             write_grib(datasample, 
                     save_root = self.output_root, 
                     channels_to_vname=self.channels_to_vname, 
-                    filter_dict = self.cfg.save_cfg.variables_list)
+                    filter_dict = self.cfg.save_cfg.variables_list,
+                    region = self.cfg.save_cfg.region if 'region' in self.cfg.save_cfg else None)
         
             print(f' forecasts are saved at {self.output_root} with nc format , save time is: {(et2-et1):.2f}s')
 
     
-    def reada_era5_initial_field(self, timestamp):
+    def read_era5_initial_field(self, timestamp):
         input_initial_field=[]
         try:
             pressure_data = xr.open_dataset(f'./data/input/era5/{timestamp[:4]}/{timestamp}_pressure.nc', 
@@ -184,28 +202,43 @@ class FengWu_GHR_Inference:
                 vdata =  vdata*1000  # if the unit is meter, please transfer it to millmeter
             input_initial_field.append(vdata)
         
-        input_initial_field = torch.cat(input_initial_field, axis=0)
+        input_initial_field = torch.cat(input_initial_field, axis=1)
         
         return self.normalization(input_initial_field)
             
     def read_analysis_initial_field(self, timestamp):
         input_initial_field=[]
+        data = None
         try:
             data = xr.open_dataset(f'./data/input/analysis/{timestamp}.grib')
         except Exception as e:
             print("An error occurred:", e)
-            raise SystemExit("Program terminated due to an error.")
- 
+
+        try:
+            data = xr.open_dataset(f'./data/input/analysis/{timestamp}.nc')
+        except Exception as e:
+            print("An error occurred with the second file:", e)
+        
         for vname in self.cfg.vnames.get('pressure'):
-            vname_data = data[vname]
+            
+            vname_data = data[vname] if data else None
             for height in self.cfg.pressure_level:
-                vdata = vname_data.sel(isobaricInhPa=height).data
+                if vname_data is not None:
+                    vdata = vname_data.sel(isobaricInhPa=height).data  
+                else:
+                    idx = f'analysis_MIR/np2001x4000/{timestamp[:4]}/{timestamp[:10]}/{timestamp[-8:]}-{vname}-{height}.npy'
+                    vdata = self.load_data_from_ceph.read_npy_from_BytesIO(objectName=idx, bucket='nwp_initial_fileds')
+                    
                 vdata = torch.tensor(vdata[None,None,:,:]).to(self.device)
                 vdata = self.check_input(vdata)
                 input_initial_field.append(vdata)
 
         for vname in self.cfg.vnames.get('single'):
-            vdata = data[vname].data
+            if vname_data is not None:
+                vdata = data[vname].data
+            else:
+                idx = f'analysis_MIR/np2001x4000/single/{timestamp[:4]}/{timestamp[:10]}/{timestamp[-8:]}-{vname}.npy'
+                vdata = self.load_data_from_ceph.read_npy_from_BytesIO(objectName=idx, bucket='nwp_initial_fileds')
             vdata = torch.tensor(vdata[None,None,:,:]).to(self.device)
             vdata = self.check_input(vdata)
 
@@ -213,7 +246,7 @@ class FengWu_GHR_Inference:
                 vdata =  vdata*1000  # if the unit is meter, please transfer it to millmeter
 
             input_initial_field.append(vdata)
-        
+
         input_initial_field = torch.cat(input_initial_field, axis=1)
         return self.normalization(input_initial_field)
     
@@ -228,18 +261,20 @@ class FengWu_GHR_Inference:
             tensor_np = tensor.cpu().numpy()
             
             # Apply Gaussian filter only on the last two dimensions
-            filtered_np = gaussian_filter(tensor_np, sigma=(0, 0, sigma, sigma))
+            tensor_np = gaussian_filter(tensor_np, sigma=(0, 0, sigma, sigma))
             
             # Convert back to torch tensor
-            filtered_tensor = torch.from_numpy(filtered_np)
+            filtered_tensor = torch.from_numpy(tensor_np)
             
             return filtered_tensor
         
-        outputs_ = apply_gaussian_filter(outputs_, sigma=1.5)
+        # outputs_ = apply_gaussian_filter(outputs_, sigma=0.5) #1.5
         no_less_than_zero = ['tp6h']
         for i in no_less_than_zero:
             idx = self.vname_to_channels.get(i)
             outputs_[:, idx, :, :][outputs_[:, idx, :, :] < 0] = 0
+            
+        outputs_ = F.interpolate(outputs_, size=(2001, 4000))
         return outputs_
     
     def normalization(self, data):
@@ -284,13 +319,20 @@ def parse_args():
                         type=int,
                         help='The size of cpu/gpu memory allocated for inference.')
     parser.add_argument('--timestamp',
-                        default='2024-07-08T18:00:00',
-                        type=str,
-                        help='The timestamp of the initial field.')
+                            nargs='+',  # Accept one or more arguments
+                            default='2024-07-08T18:00:00',
+                            type=str,   # Ensure input is parsed as strings
+                            help='The timestamp(s) of the initial field. Can be a single string or a list of strings.'
+                        )
     parser.add_argument('--gpu',
                         default=None,
                         type=int,
                         help='The timestamp of the initial field.'
+                        )
+    parser.add_argument('--version',
+                        default='v1',
+                        type=str,
+                        help='The version of the FengWu-GHR.'
                         )
     parser.add_argument('--dataset',
                         default='analysis',
@@ -310,7 +352,19 @@ def parse_args():
     
     args = parser.parse_args()
     return args
-
+def parse_timestamp(value):
+    """
+    Helper function to parse the timestamp argument.
+    Accepts either a single string or a list of strings.
+    """
+    # If input is a single string, return as-is
+    if isinstance(value, str):
+        return [value]
+    # If input is a list, ensure all elements are strings
+    elif isinstance(value, list):
+        return [str(v) for v in value]
+    else:
+        raise argparse.ArgumentTypeError("Timestamp must be a string or a list of strings.")
 def main():
     args = parse_args()
     if args.gpu is not None:
@@ -330,8 +384,14 @@ def main():
     FengWu_GHR = FengWu_GHR_Inference(
                     cfg=cfg,
                     )
-    
-    FengWu_GHR.inference(args.timestamp)
+    timestamps =  parse_timestamp(args.timestamp)
+
+    if len(timestamps)==2:
+        timestamps = pd.date_range(start=timestamps[0], end=timestamps[1], freq='6H')
+        timestamps = timestamps.strftime("%Y-%m-%d %H:%M:%S").tolist()
+
+    for timestamp in timestamps:
+        FengWu_GHR.inference(timestamp)
 
 
 if __name__ == '__main__':

@@ -22,7 +22,7 @@ class era5_downloader():
         self.ecmwf_dataset_single = 'reanalysis-era5-single-levels'
 
         self.local_root = self.cfg.storage.local
-
+        print(self.cfg)
         self.cdsapi_client = cdsapi.Client(url=os.environ.get("CDSAPI_URL"),
                                             key=os.environ.get("CDSAPI_KEY"))
         self.cdsapi_client.session.proxies.update(self.proxies)
@@ -68,7 +68,9 @@ class era5_downloader():
         start_time  = datetime.strptime(f"{time_required['year']}-{time_required['month']}-{time_required['day']} {time_required['time']}", "%Y-%m-%d %H:%M:%S")
 
         request_dic.update({'variable':['total_precipitation']})
-        ds = xr.open_dataset(f"{prefix}_single{extension}")
+        import pdb
+        pdb.set_trace()
+        ds = xr.open_dataset(f"{prefix}_single{extension}", engine='netcdf4')
 
         tp_list = [ds["tp"].copy()]
         for i in range(1,6):
@@ -119,8 +121,8 @@ class era5_downloader():
 
 
     def env_seting(self):
-        os.environ['CDSAPI_URL'] = 'https://cds.climate.copernicus.eu/api/v2'
-        os.environ['CDSAPI_KEY'] = '178654:df1be719-ec6b-418f-b520-229e3dbd7718'
+        os.environ['CDSAPI_URL'] = 'https://cds.climate.copernicus.eu/api'
+        os.environ['CDSAPI_KEY'] = 'ea3a2607-158c-48a4-bd27-b255256b2759'
         
         if self.cfg.proxy.type=='direct':
             proxies = {}
@@ -178,15 +180,17 @@ if __name__ =="__main__":
 
     parser = argparse.ArgumentParser(description='Interp station')
     parser.add_argument('--st', type=str, help='initial timestamp')
-    parser.add_argument('--et', type=str, help='initial timestamp')
+    parser.add_argument('--et', type=str, default='',  help='initial timestamp')
     parser.add_argument('--local_root', type=str, help='the path to save the era5 data')
     
     args = parser.parse_args()
 
 
     from era5_downloader import era5_downloader
-    ERA5_data = era5_downloader('tools/era5_config.py')
-   
+    ERA5_data = era5_downloader('config/era5_config.py')
+    
+    if len(args.et)==0:
+        args.et=args.st
     time_stamps = pd.date_range(start=args.st, end=args.et, freq='6H')
     for i in time_stamps:
      data = ERA5_data.get_from_timestamp(time_stamp=i,

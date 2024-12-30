@@ -7,11 +7,13 @@ __pycache__
 *data/script
 *data/shanxi
 *tools/shanxi
-*tools/shanghai
-*tools/shanxi
+*tools/shanghaidu -h 
 *demos
 *script
-nwp_models/fengwu_ghr_lora.py
+*test
+nwp_models/fengwu_ghr_lora_v1.py
+nwp_models/fengwu_ghr_lora_v2.py
 nwp_models/lora.py
+
 
 

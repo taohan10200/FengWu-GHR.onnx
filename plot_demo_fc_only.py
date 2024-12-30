@@ -222,7 +222,7 @@ def plot_surface_single_image(initial_timestamp:str,
                           steps: int, 
                           plot_variable:dict, 
                           output_root: str):
-    leftlon, rightlon, lowerlat, upperlat = (90,150, 10,50)  # chinese east sea
+    leftlon, rightlon, lowerlat, upperlat =   (90,150, 10,50)  # chinese east sea (-180, 180, -90, 90)  #
     img_extent = [leftlon, rightlon, lowerlat, upperlat]
 
     fontsize = 20
@@ -232,8 +232,8 @@ def plot_surface_single_image(initial_timestamp:str,
     for step in range(steps): 
         print(f'step:{step}')
         fig, axes = plt.subplots(1, 1, 
-                    figsize=(12.5, 8.5),
-                    subplot_kw={'projection': ccrs.Robinson(central_longitude=180)}, #ccrs.Robinson() ccrs.PlateCarree(
+                    figsize=(10, 5),
+                    subplot_kw={'projection': ccrs.PlateCarree(central_longitude=180)}, #ccrs.Robinson() ccrs.PlateCarree(
                     gridspec_kw={
                     # 'width_ratios': [2, 1],
                     # 'height_ratios': [1,1], 
@@ -288,7 +288,7 @@ def plot_surface_single_image(initial_timestamp:str,
         
         fig, axes = plt.subplots(1, 1, 
             figsize=(8.5, 8.5),
-            subplot_kw={'projection': ccrs.Robinson(central_longitude=180)}, #ccrs.Robinson() ccrs.PlateCarree(
+            subplot_kw={'projection': ccrs.PlateCarree(central_longitude=180)}, #ccrs.Robinson() ccrs.PlateCarree(
             gridspec_kw={
             # 'width_ratios': [2, 1],
             # 'height_ratios': [1,1], 

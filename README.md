@@ -44,7 +44,7 @@ Download [meta_model_0.25](https://hkustconnect-my.sharepoint.com/:u:/g/personal
 Download sample input from [here](https://hkustconnect-my.sharepoint.com/:f:/g/personal/thanad_connect_ust_hk/EmLxeXdC2a5NlJ0RW5ZHyvEBCuFcABtk5Z3SqbIGwEyK2w?e=8ZKuzU).
 
 
-> We support the grib format input, which  waives a complex data prepareness. What you should do is to organize your data as a packed grib file after you getting the initial field for ECMWF or other data sources. Below is a sample we provided:  
+> We support the input with grib format, which  waives a complex data prepareness. What you should do is to organize your data as a packed grib file after you getting the initial field for ECMWF or other data sources. Below is a sample we provided:  
 
 ```python
 import xarray as xr
@@ -78,7 +78,7 @@ Data variables: (12/16)
 > If you are with diffculties to get the high-reslolution analysis data. We here also provide a  portable way to download the EAR5 data as initial field. 
 
 ```python
-python tools/era5_downloader.py --time_stamp='2024-07-01T00:00:00' --local_root='./data/input/era5'
+python era5_downloader.py --time_stamp='2024-07-01T00:00:00' --local_root='./data/input/era5'
 ```
 ### 4.  Organize your project as following structure.
 ```
@@ -102,28 +102,37 @@ $ FengWu-GHR.onnx/
 └── README.md
 
 ```
-### 5. 10-days Inference 
+### 5. Inference  
+### Single GPU
 ```bash
 # run 0.09 from torch model
-python -u fengwu_ghr_inference_torch.py --timestamp=2024-09-13T06:00:00 --config=config/fengwu_ghr_cfg_74v_0.09_torch.py  --gpu=0
-\
+python -u fengwu_ghr_inference_torch.py --timestamp=2024-09-13T00:00:00 --config=config/fengwu_ghr_cfg_74v_0.09_torch.py  --gpu=0
+
 ## Inference for high resolution forecast: 0.09x0.09 
-$ python -u fengwu_ghr_inference_9km.py --timestamp=2024-07-08T18:00:00  --config=config/fengwu_ghr_cfg_74v_0.09.py --gpu=0
+$ python -u fengwu_ghr_inference_9km.py --timestamp=2024-07-08T18:00:00  --config=config/fengwu_ghr_cfg_74v_0.09.py --dataset=era5  --gpu=0
 
 ## Inference for high resolution forecast: 0.25x0.25 
 # If you only have 10 GB memory, use `--poolsize`
-python -u fengwu_ghr_inference_25km.py --timestamp=2024-07-01T00:00:00 --config=config/fengwu_ghr_cfg_74v_0.25.py  --gpu=0
+python -u fengwu_ghr_inference_25km.py --timestamp=2024-07-01T00:00:00 --config=config/fengwu_ghr_cfg_74v_0.25.py  --dataset=era5 --gpu=0
+
 
 # Try more options
 $ python -u fengwu_ghr_inference.py --help
 ```
+
+
+### Multi GPU
+```
+sh run.sh ai4earth inference  fengwu_ghr_inference_torch_dist.py config/fengwu_ghr_cfg_74v_0.09_torch.py 4 2023-10-11 2024-03-31 spot 
+```
+
 ### 6. Plot demo
 ```bash
 # for analysis initial field
 python -u plot_demo_gif.py --timestamp=2024-09-13T06:00:00 --dataset=analysis --inference_steps=40
 
 # for ERA5 initial field
-python -u plot_demo_gif.py --timestamp=2024-07-08T18:00:00 --dataset=era5 --inference_steps=40
+python -u plot_demo_gif.py --timestamp=2024-07-08T00:00:00 --dataset=era5 --inference_steps=40
 ```
 
 Reminder: After runing this script, the forecast results will be saved as `netcdf` format in `data/output/${timestamp}`. Feel free to change the  `inference_steps` and `save_cfg` in [fengwu_ghr_cfg.py](./config/fengwu_ghr_cfg.py) for rollout length and saved variables.  

@@ -27,12 +27,13 @@ grib_para = {
 "tcc": {"Name":"Total cloud cover", "ShortName":"tcc",   'Unit':"0-1",  "ParaID": 164},
 "sp":{"Name":"Surface pressure",          "ShortName":"sp",   'Unit':"Pa",        "ParaID": 134},
 "ssr": {"Name":"Surface net short-wave (solar) radiation", "ShortName":"ssr",   'Unit':"J m-2",  "ParaID": 176},
-"ssr6h": {"Name":"Surface net short-wave (solar) radiation (6 hour)", "ShortName":"ssr6h",   'Unit':"J m-2",  "ParaID": 176},
+"ssr6h": {"Name":"Surface net short-wave (solar) radiation (6 hour)", "ShortName":"ssr''h",   'Unit':"J m-2",  "ParaID": 176},
 }
 def write_grib(data_sample: Union[torch.Tensor, np.ndarray], 
                save_root: Union[str,Path]=None, 
                channels_to_vname: Dict=None, 
                filter_dict: list=['z_500','z_850', 't_500', 't_850','tp6h', 'u10', 'v10'],
+               region: object = None, 
                s3_client: object=None,
                merge_pressure_surface = True
                )->None:
@@ -150,7 +151,10 @@ def write_grib(data_sample: Union[torch.Tensor, np.ndarray],
                 )
             os.makedirs(f'{save_root}/{initial_time}/', exist_ok=True)
             save_path = f'{save_root}/{initial_time}/{pred_time}_pressure.grib'
+            if region:
+                ds = ds.sel(latitude=slice(region['lat'][0], region['lat'][1]), longitude=slice(region['lon'][0],region['lon'][1]))
             # to_grib(ds, save_path)
+ 
             ds.to_netcdf(save_path.replace('grib', 'nc'))
            
             if s3_client is not None:
@@ -199,6 +203,8 @@ def write_grib(data_sample: Union[torch.Tensor, np.ndarray],
             os.makedirs(f'{save_root}/{initial_time}/', exist_ok=True)
             save_path = f'{save_root}/{initial_time}/{pred_time}_surface.grib'
             # to_grib(ds, save_path)
+            if region is not None:
+                ds = ds.sel(latitude=slice(region['lat'][0], region['lat'][1]), longitude=slice(region['lon'][0],region['lon'][1] ))   
             ds.to_netcdf(save_path.replace('grib', 'nc'))
             
             if s3_client is not None:
@@ -257,7 +263,8 @@ def write_grib(data_sample: Union[torch.Tensor, np.ndarray],
                 "history": f"First generate at:{generate_time}"
             }
             )
-           
+        if region is not None:
+            ds_surface = ds_surface.sel(latitude=slice(region['lat'][0], region['lat'][1]), longitude=slice(region['lon'][0],region['lon'][1] ))   
         if save_path.endswith('nc'): 
             ds_surface.to_netcdf(save_path)
         elif save_path.endswith('grib'): 
