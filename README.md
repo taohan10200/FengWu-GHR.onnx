@@ -120,7 +120,6 @@ python -u fengwu_ghr_inference_torch.py \
     --config=config/fengwu_ghr_cfg_88v_0.09_torch_v2.py \
     --gpu=0
 
-
 # Try more options
 $ python -u fengwu_ghr_inference_torch.py --help
 ```
@@ -141,11 +140,19 @@ $ python -u fengwu_ghr_inference_torch_dist.py --help
 ``` 
 
 ### 6. Plot demo
+- Without ground truth
+```bash
+python -u plot_demo_fc_only.py --timestamp=2024-11-04T00:00:00 --dataset=analysis --inference_steps=40
+```
+
+- With analysis as GT
 ```bash
 # for analysis initial field
 python -u plot_demo_gif.py --timestamp=2024-09-13T06:00:00 --dataset=analysis --inference_steps=40
+```
 
-# for ERA5 initial field
+- With ERA5 as GT
+```bash
 python -u plot_demo_gif.py --timestamp=2024-07-08T00:00:00 --dataset=era5 --inference_steps=40
 ```
 
