@@ -43,11 +43,12 @@ $ python3 -m pip install -r requirements.txt
 ### 2. Download the Pretrained ONNX model.
 Download [meta_model_0.25](https://hkustconnect-my.sharepoint.com/:u:/g/personal/thanad_connect_ust_hk/EYY_VIxLltlMvkqG-1T6IBEBXYcPWHF5PwKrUL2TJfTt2g?e=pQbJHo) and unzip it in `$FengWu-GHR.onnx/onnx/` (the root of this repository).
 
-### 3. Get the input data/ initial field
-Download sample input from [here](https://hkustconnect-my.sharepoint.com/:f:/g/personal/thanad_connect_ust_hk/EmLxeXdC2a5NlJ0RW5ZHyvEBCuFcABtk5Z3SqbIGwEyK2w?e=8ZKuzU).
+### 3. Get the input data (initial field)
+> We support the input with grib or netcdf format, which  waives a complex data prepareness. What you should do is to organize your data as a packed grib file after getting the initial field for ECMWF or other data sources. Below is a sample we provided: 
+#### 
+- **For 0.09° analysis data**: Download sample input from [here](https://hkustconnect-my.sharepoint.com/:f:/g/personal/thanad_connect_ust_hk/EmLxeXdC2a5NlJ0RW5ZHyvEBCuFcABtk5Z3SqbIGwEyK2w?e=8ZKuzU).
 
-
-> We support the input with grib format, which  waives a complex data prepareness. What you should do is to organize your data as a packed grib file after you getting the initial field for ECMWF or other data sources. Below is a sample we provided:  
+ 
 
 ```python
 import xarray as xr
@@ -78,7 +79,8 @@ Data variables: (12/16)
 
 **Note**: The requirement for `tp6h` in the initial field is the accumulated precipitation over the past six hours from the analysis time. It can be derived from the predictions intilized at the last time.
 
-> If you are with diffculties to get the high-reslolution analysis data. We here also provide a  portable way to download the EAR5 data as initial field. 
+- **For 0.25° ERA5 data**：We provide the download and preprocessed script.
+
 
 ```python
 python era5_downloader.py --st='2024-11-04T00:00:00' --et='2024-1
