@@ -232,8 +232,10 @@ The weights were trained on ECMWF's ERA5 and HRES data. The repo includes a few 
 https://creativecommons.org/licenses/by/4.0/
  4. Disclaimer: ECMWF does not accept any liability whatsoever for any error or omission in the data, their availability, or for any loss or damage arising from their use.
 
-## Citation
-```
+## 📚 **Citation**
+If you find this work useful, please cite:
+
+```bibtex
 @article{han2024fengwughr,
 title={FengWu-GHR: Learning the Kilometer-scale Medium-range Global Weather Forecasting}, 
 author={Tao Han and Song Guo and Fenghua Ling and Kang Chen and Junchao Gong and Jingjia Luo and Junxia Gu and Kan Dai and Wanli Ouyang and Lei Bai},
@@ -242,4 +244,4 @@ eprint={2402.00059},
 archivePrefix={arXiv},
 primaryClass={cs.LG}
 }
-``````
+```
