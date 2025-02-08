@@ -121,7 +121,7 @@ $ python -u fengwu_ghr_inference_torch.py --help
 ```
 
 
-### Multi GPU (for slurm)
+#### Multi GPU (for slurm)
 ```bash
 sh run.sh ai4earth inference \
     fengwu_ghr_inference_torch_dist.py \  # Inference script
