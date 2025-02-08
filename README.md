@@ -78,7 +78,8 @@ Data variables: (12/16)
 > If you are with diffculties to get the high-reslolution analysis data. We here also provide a  portable way to download the EAR5 data as initial field. 
 
 ```python
-python era5_downloader.py --time_stamp='2024-07-01T00:00:00' --local_root='./data/input/era5'
+python era5_downloader.py --st='2024-11-04T00:00:00' --et='2024-1
+1-04T00:00:00'  --local_root='./data/input/era5'
 ```
 ### 4.  Organize your project as following structure.
 ```
@@ -102,29 +103,37 @@ $ FengWu-GHR.onnx/
 └── README.md
 
 ```
-### 5. Inference  
-### Single GPU
+
+### 5. Inference
+
+#### Single GPU
+
+##### 1. Run 0.09° Torch Model
 ```bash
-# run 0.09 from torch model
-python -u fengwu_ghr_inference_torch.py --timestamp=2024-09-13T00:00:00 --config=config/fengwu_ghr_cfg_74v_0.09_torch.py  --gpu=0
-
-## Inference for high resolution forecast: 0.09x0.09 
-$ python -u fengwu_ghr_inference_9km.py --timestamp=2024-07-08T18:00:00  --config=config/fengwu_ghr_cfg_74v_0.09.py --dataset=era5  --gpu=0
-
-## Inference for high resolution forecast: 0.25x0.25 
-# If you only have 10 GB memory, use `--poolsize`
-python -u fengwu_ghr_inference_25km.py --timestamp=2024-07-01T00:00:00 --config=config/fengwu_ghr_cfg_74v_0.25.py  --dataset=era5 --gpu=0
+python -u fengwu_ghr_inference_torch.py \
+    --timestamp=2024-09-13T00:00:00 \
+    --config=config/fengwu_ghr_cfg_88v_0.09_torch_v2.py \
+    --gpu=0
 
 
 # Try more options
-$ python -u fengwu_ghr_inference.py --help
+$ python -u fengwu_ghr_inference_torch.py --help
 ```
 
 
-### Multi GPU
-```
-sh run.sh ai4earth inference  fengwu_ghr_inference_torch_dist.py config/fengwu_ghr_cfg_74v_0.09_torch.py 4 2023-10-11 2024-03-31 spot 
-```
+### Multi GPU (for slurm)
+```bash
+sh run.sh ai4earth inference \
+    fengwu_ghr_inference_torch_dist.py \  # Inference script
+    config/fengwu_ghr_cfg_74v_0.09_torch.py \  # Configuration file
+    4 \  # Number of GPUs
+    2023-10-11 \  # Start date
+    2024-03-31 \  # End date
+    spot  # Mode (e.g., spot or reserved)
+
+# Try more options
+$ python -u fengwu_ghr_inference_torch_dist.py --help
+``` 
 
 ### 6. Plot demo
 ```bash
