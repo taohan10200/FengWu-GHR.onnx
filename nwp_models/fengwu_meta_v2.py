@@ -20,17 +20,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 from einops import rearrange
-from typing import List, Tuple
 from timm.models.layers import drop_path, to_2tuple, trunc_normal_
 from nwp.registry import MODELS
 from mmengine.model import BaseModel
 from flash_attn import flash_attn_qkvpacked_func, flash_attn_func
-from .lora import LinearLoraGroups, Linear_Head_Groups, Masked_Lora_Linear
 from diffusers.models.unets.unet_2d_blocks import get_up_block
 
 class DropPath(nn.Module):
     """Drop paths (Stochastic Depth) per sample  (when applied in main path of residual blocks).
     """
+
     def __init__(self, drop_prob=None):
         super(DropPath, self).__init__()
         self.drop_prob = drop_prob
@@ -41,109 +40,75 @@ class DropPath(nn.Module):
     def extra_repr(self):
         return 'p={}'.format(self.drop_prob)
 
+
 class QuickGELU(nn.Module):
     def forward(self, x: torch.Tensor):
         return x * torch.sigmoid(1.702 * x)
-    
-class Conv_Mlp(nn.Module):
-    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0., bias=True, mlp_lora=False,lora_rank=16,patch_shape=(60,120)):
+
+
+class Mlp(nn.Module):
+    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0., bias=True):
         super().__init__()
-        self.mlp_lora = mlp_lora
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
-        self.fc1 = nn.Conv2d(in_features, hidden_features, 3, padding=1)
-        self.act = nn.SiLU()
-        self.fc2 = nn.Conv2d(hidden_features, out_features, 3, padding=1, bias=bias)
+        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.act = act_layer()
+        self.fc2 = nn.Linear(hidden_features, out_features, bias=bias)
         self.drop = nn.Dropout(drop)
-        self.Hp, self.Wp = patch_shape
-    def forward(self, 
-                x: torch.Tensor, 
-                step: torch.Tensor.int = 0,
-                ):
-        N, D, C = x.shape
-        x = x.view(N, self.Hp, self.Wp, -1).permute(0, 3, 1, 2)  
+
+    def forward(self, x):
         x = self.fc1(x)
         x = self.act(x)
         # x = self.drop(x)
+        # commit this for the orignal BERT implement
         x = self.fc2(x)
-        x = self.drop(x)      
-        x = x.reshape(N, C, self.Hp*self.Wp).permute(0, 2, 1) # NLD     
-        return x
-    
-class Mlp(nn.Module):
-    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0., bias=True,total_aug_steps=0,mlp_lora=False,lora_rank=16):
-        super().__init__()
-        self.mlp_lora = mlp_lora
-        out_features = out_features or in_features
-        hidden_features = hidden_features or in_features
-        if mlp_lora:
-            self.fc1 = FINETUNE_LINEAR(in_features, hidden_features, lora_rank, total_aug_steps=total_aug_steps)
-            self.act = act_layer()
-            self.fc2 = FINETUNE_LINEAR(hidden_features, out_features, lora_rank, total_aug_steps=total_aug_steps)
-            self.drop = nn.Dropout(drop)
-        else:
-            self.fc1 = nn.Linear(in_features, hidden_features)
-            self.act = act_layer()
-            self.fc2 = nn.Linear(hidden_features, out_features, bias=bias)
-            self.drop = nn.Dropout(drop)
-        
-    def forward(self, 
-                x: torch.Tensor, 
-                step: torch.Tensor.int = 0,
-                ):
-        if self.mlp_lora:
-            x = self.fc1(x, step)
-            x = self.act(x)
-            # x = self.drop(x)
-            x = self.fc2(x,step)
-            x = self.drop(x)
-        else:
-            x = self.fc1(x)
-            x = self.act(x)
-            # x = self.drop(x)
-            x = self.fc2(x)
-            x = self.drop(x)           
-
+        x = self.drop(x)
         return x
 
 
 class Attention(nn.Module):
     def __init__(
-            self, dim, num_heads=8, qkv_bias=False, window_size=None, rel_pos_spatial=False,total_aug_steps=0,qkv_lora=True,lora_rank=16):
+            self, dim, num_heads=8, qkv_bias=False, window_size=None, rel_pos_spatial=False):
         super().__init__()
         self.num_heads = num_heads
         head_dim = dim // num_heads
         self.scale = head_dim ** -0.5
-        if qkv_lora:
-            self.qkv = FINETUNE_LINEAR(dim, dim * 3, lora_rank,total_aug_steps=total_aug_steps,bias=qkv_bias) 
-            self.proj =FINETUNE_LINEAR(dim, dim,lora_rank,total_aug_steps=total_aug_steps) #nn.Linear(dim, dim)
-        else:
-            self.qkv=nn.Linear(dim, dim * 3, bias=qkv_bias)
-            self.proj=nn.Linear(dim, dim)
-            
+        self.rel_pos_spatial = rel_pos_spatial
+        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.window_size = window_size
+        if COMPAT:
+            if COMPAT == 2:
+                self.rel_pos_h = nn.Parameter(torch.zeros(2 * window_size[0] - 1, head_dim))
+                self.rel_pos_w = nn.Parameter(torch.zeros(2 * window_size[1] - 1, head_dim))
+            else:
+                q_size = window_size[0]
+                kv_size = q_size
+                rel_sp_dim = 2 * q_size - 1
+                self.rel_pos_h = nn.Parameter(torch.zeros(rel_sp_dim, head_dim))
+                self.rel_pos_w = nn.Parameter(torch.zeros(rel_sp_dim, head_dim))
+        self.proj = nn.Linear(dim, dim)
 
-    def forward(self, 
-                x: torch.Tensor,
-                step: torch.Tensor.int=0
-                ):
+    def forward(self, x, H, W):
         B, N, C = x.shape
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads)
+        data_type = qkv.dtype
+        if qkv.dtype != torch.float16:
+            qkv=qkv.to(torch.float16)
+            
+        x = flash_attn_qkvpacked_func(qkv,dropout_p=0.0, softmax_scale=self.scale, causal=False).reshape(B, N, C)
+        x = x.to(data_type)
 
-        if ONNX_EXPORT:
-            qkv = self.qkv(x,step).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
-            q, k, v = qkv.unbind(0) # make torchscript happy (cannot use tensor as tuple)   --> (batchsize, heads, len, head_dim)
-            attn = ((q * self.scale) @ k.transpose(-2, -1))
-            attn = torch.softmax(attn, dim=-1)
-            x = (attn @ v).transpose(1, 2).reshape(B, N, C)
-        # =====================================
-        else:   
-            qkv = self.qkv(x,step).reshape(B, N, 3, self.num_heads, C // self.num_heads)
-            data_type = qkv.dtype
-            qkv=qkv.to(torch.float16) 
-            x = flash_attn_qkvpacked_func(qkv, dropout_p=0.0, softmax_scale=self.scale, causal=False).reshape(B, N, C)    
-            x=x.to(data_type)
+        # else:        
+        #     qkv=qkv.permute(2, 0, 3, 1, 4)
+        #     q, k, v = qkv.unbind(0)   # make torchscript happy (cannot use tensor as tuple)
 
-        x = self.proj(x,step)
+        #     attn = ((q * self.scale) @ k.transpose(-2, -1))
+        #     if self.rel_pos_spatial:
+        #         raise
+        #         attn = calc_rel_pos_spatial(attn, q, self.window_size, self.window_size, self.rel_pos_h, self.rel_pos_w)
+        #     attn = attn.softmax(dim=-1)
+        #     x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = self.proj(x)
         return x
 
 
@@ -232,8 +197,7 @@ class WindowAttention(nn.Module):
         qkv_bias (bool, optional):  If True, add a learnable bias to query, key, value. Default: True
     """
 
-    def __init__(self, dim, window_size, num_heads, qkv_bias=True, rel_pos_spatial=False, total_aug_steps=0, patch_shape=None,
-    qkv_lora=True,lora_rank=16):
+    def __init__(self, dim, window_size, num_heads, qkv_bias=True, rel_pos_spatial=False):
         super().__init__()
         self.dim = dim
         self.window_size = window_size  # Wh, Ww
@@ -241,33 +205,32 @@ class WindowAttention(nn.Module):
         head_dim = dim // num_heads
         self.scale = head_dim ** -0.5
         self.rel_pos_spatial=rel_pos_spatial
-        self.Hp, self.Wp = patch_shape
 
-        if qkv_lora:
-            self.qkv = FINETUNE_LINEAR(dim, dim*3,lora_rank,total_aug_steps=total_aug_steps, bias=qkv_bias) 
-            self.proj = FINETUNE_LINEAR(dim, dim,lora_rank, total_aug_steps=total_aug_steps) 
-        else:
-            self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
-            self.proj = nn.Linear(dim, dim)
-        
-    def forward(self, 
-                x: torch.tensor, 
-                step: torch.Tensor.int = 0
-                ):
+        if COMPAT:
+            q_size = window_size[0]
+            kv_size = window_size[1]
+            rel_sp_dim = 2 * q_size - 1
+            self.rel_pos_h = nn.Parameter(torch.zeros(rel_sp_dim, head_dim))
+            self.rel_pos_w = nn.Parameter(torch.zeros(rel_sp_dim, head_dim))
+
+        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        self.proj = nn.Linear(dim, dim)
+
+    def forward(self, x, H, W):
         """ Forward function.
         Args:
             x: input features with shape of (num_windows*B, N, C)
             mask: (0/-inf) mask with shape of (num_windows, Wh*Ww, Wh*Ww) or None
         """
         B_, N, C = x.shape
-     
-        
-        x = x.reshape(B_, self.Hp, self.Wp, C)
+
+
+        x = x.reshape(B_, H, W, C)
+
         pad_l = pad_t = 0
-        pad_r = (self.window_size[1] - self.Wp % self.window_size[1]) % self.window_size[1]
-        pad_b = (self.window_size[0] - self.Hp % self.window_size[0]) % self.window_size[0]
-        # assert pad_r == 0 
-        # assert pad_b == 0
+        pad_r = (self.window_size[1] - W % self.window_size[1]) % self.window_size[1]
+        pad_b = (self.window_size[0] - H % self.window_size[0]) % self.window_size[0]
+
         x = F.pad(x, (0, 0, pad_l, pad_r, pad_t, pad_b))
         _, Hp, Wp, _ = x.shape
 
@@ -276,219 +239,99 @@ class WindowAttention(nn.Module):
 
         B_w = x.shape[0]
         N_w = x.shape[1]
-        
-        if  ONNX_EXPORT:
-            qkv = self.qkv(x,step).reshape(B_w, N_w, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
-            q, k, v = qkv.unbind(0)  #  --> (batchsize, heads, len, head_dim)
-            attn = ((q * self.scale) @ k.transpose(-2, -1))
-            attn = attn.softmax(dim=-1)
-            x = (attn @ v).transpose(1, 2).reshape(B_w, N_w, C)
-        #=====================================
-        else:
-            qkv = self.qkv(x,step).reshape(B_w, N_w, 3, self.num_heads, C // self.num_heads)
-            data_type = qkv.dtype
-            qkv=qkv.to(torch.float16) 
-            x = flash_attn_qkvpacked_func(qkv,dropout_p=0.0, softmax_scale=self.scale, causal=False).reshape(B_w, N_w, C)          
-            x=x.to(data_type)
-        # ===========================================  
-        x = self.proj(x,step)
+        qkv = self.qkv(x).reshape(B_w, N_w, 3, self.num_heads, C // self.num_heads)
 
+        data_type = qkv.dtype
+        if qkv.dtype != torch.float16:
+            qkv=qkv.to(torch.float16)
+        
+        x = flash_attn_qkvpacked_func(qkv,dropout_p=0.0, softmax_scale=self.scale, causal=False).reshape(B_w, N_w, C)
+        x = x.to(data_type)
+        # else:        
+        #     qkv=qkv.permute(2, 0, 3, 1, 4)
+        #     q, k, v = qkv.unbind(0)   # make torchscript happy (cannot use tensor as tuple)   --> (batchsize, heads, len, head_dim)
+
+        #     attn = ((q * self.scale) @ k.transpose(-2, -1))
+        #     if self.rel_pos_spatial:
+        #         raise
+
+        #     attn = attn.softmax(dim=-1)
+        #     _attn_mask = (torch.isinf(attn) + torch.isnan(attn))
+        #     attn = attn.masked_fill(_attn_mask, 0)
+
+        #     x = (attn @ v).transpose(1, 2).reshape(B_w, N_w, C)
+        
+        x = self.proj(x)
+        
+      
         x = x.view(-1, self.window_size[1], self.window_size[0], C)
         x = window_reverse(x, self.window_size, Hp, Wp)  # B H' W' C
-        
+
         if pad_r > 0 or pad_b > 0:
-            x = x[:, :self.Hp, :self.Wp, :].contiguous()
-        
-        x = x.view(B_, self.Hp * self.Wp, C)
+            x = x[:, :H, :W, :].contiguous()
+
+        x = x.view(B_, H * W, C)
 
         return x
-    
-class Hres_Block(nn.Module):
-    def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False,
-                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm,
-                 window_size=None, window=False, rel_pos_spatial=False,total_aug_steps=0,
-                 qkv_lora=False,mlp_lora=False,lora_rank=16,downscale=3, patch_shape=None):
-        super().__init__()
-        self.norm1_hres = norm_layer(dim)
-        self.window = window
-        self.downscale = downscale
-        self.Hp, self.Wp = patch_shape
-        if not window:
-            self.attn_hres = Attention(
-                dim, num_heads=num_heads, qkv_bias=qkv_bias,
-                window_size=window_size, rel_pos_spatial=rel_pos_spatial,
-                total_aug_steps = total_aug_steps,
-                qkv_lora=qkv_lora,
-                lora_rank=lora_rank
-                )   
-        else:
-            self.attn_hres = WindowAttention(
-                dim, num_heads=num_heads, qkv_bias=qkv_bias,
-                window_size=window_size, rel_pos_spatial=rel_pos_spatial,
-                total_aug_steps = total_aug_steps,
-                patch_shape = (patch_shape[0]*downscale, patch_shape[1]*downscale),
-                qkv_lora=qkv_lora,
-                lora_rank=lora_rank
-            )
-        # NOTE: drop path for stochastic depth, we shall see if this is better than dropout here
-        
-        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
-        self.norm2_hres = norm_layer(dim)
-        self.mlp_hres = Conv_Mlp(in_features=dim, 
-                                 hidden_features=int(dim),   
-                                 act_layer=act_layer,
-                                 mlp_lora=mlp_lora,lora_rank=lora_rank,
-                                 patch_shape=(patch_shape[0]*downscale, patch_shape[1]*downscale))
 
-    def forward(self, 
-                x: torch.Tensor, 
-                step: torch.Tensor.int=0,
-                ):
-       # the embedded self-attention first flattens multi batches of one input to a single two-dimension token and then implements window self-attention. 
-
-        bs_fold, N, C=x.size()  #9, 60*120,3072
-        x = x.view(x.size(0), self.Hp, self.Wp,-1).permute(3,0,1,2) ##9, 60, 120, 3072
-        
-        bs_in =  bs_fold//(self.downscale*self.downscale)
-        x = x.contiguous().view(bs_in, C*bs_fold, -1) #9, 3072, 60, 120
-        
-
-        x = F.fold(x, 
-                   output_size=(self.Hp*self.downscale, self.Wp*self.downscale), 
-                   kernel_size=(self.downscale,self.downscale), 
-                   stride=(self.downscale,self.downscale)) #  torch.Size([1, 3072,180, 360])   
-        
-        x = x.flatten(2).transpose(1, 2) #(1,180*360, 3072)
-        
-
-        x = x + self.drop_path(self.attn_hres(self.norm1_hres(x), step ))
-        x = x + self.drop_path(self.mlp_hres(self.norm2_hres(x), step))
-        
-        
-        x = x.transpose(1, 2).reshape(bs_in, C, self.Hp*self.downscale, self.Wp*self.downscale) #(1,3072, 180, 360)
-        x=F.unfold(x, kernel_size=(self.downscale, self.downscale), stride=(self.downscale, self.downscale)) # 1, 3072*9, 60*120
-        x = x.view(C, bs_fold, self.Hp, self.Wp) #3072, 9, 60, 120
-        
-        x = x.permute(1,0,2,3)  #9, 3072, 60, 120
-        
-        x = x.reshape(x.size(0), x.size(1), -1) # bs*9, 3072, 60*120
-        x = x.permute(0, 2, 1).contiguous() 
-
-        #=====batch cross attention finished====================== 
-        return (x, step)
 
 class Block(nn.Module):
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False,
                  drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm,
-                 window_size=None, window=False, rel_pos_spatial=False,total_aug_steps=0,
-                 qkv_lora=True,mlp_lora=False,lora_rank=16,downscale=3, norm_finetune=False, patch_shape=None):
+                 window_size=None, window=False, rel_pos_spatial=False):
         super().__init__()
         self.norm1 = norm_layer(dim)
-        self.window = window
-        self.downscale = downscale
-        self.norm_finetune = norm_finetune
-        self.Hp, self.Wp = patch_shape
-        
         if not window:
             self.attn = Attention(
                 dim, num_heads=num_heads, qkv_bias=qkv_bias,
-                window_size=window_size, rel_pos_spatial=rel_pos_spatial,
-                total_aug_steps = total_aug_steps,
-                qkv_lora=qkv_lora,
-                lora_rank=lora_rank
-                )   
+                window_size=window_size, rel_pos_spatial=rel_pos_spatial)
         else:
             self.attn = WindowAttention(
                 dim, num_heads=num_heads, qkv_bias=qkv_bias,
                 window_size=window_size, rel_pos_spatial=rel_pos_spatial,
-                total_aug_steps = total_aug_steps,
-                patch_shape = patch_shape,
-                qkv_lora=qkv_lora,
-                lora_rank=lora_rank
             )
         # NOTE: drop path for stochastic depth, we shall see if this is better than dropout here
-
-        
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.norm2 = norm_layer(dim)
-        self.mlp = Mlp(in_features=dim, hidden_features=int(dim * mlp_ratio), act_layer=act_layer, total_aug_steps=total_aug_steps , mlp_lora=mlp_lora, lora_rank=lora_rank)
+        mlp_hidden_dim = int(dim * mlp_ratio)
+        self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer)
    
-    def duplicted_norm_weights(self):
-        if hasattr(self, 'norm1_groups'):
-            for i in range(len(self.norm1_groups)):
-                self.norm1_groups[i].load_state_dict(self.norm1.state_dict())     
-        if hasattr(self, 'norm2_groups'):
-            for i in range(len(self.norm2_groups)):
-                self.norm2_groups[i].load_state_dict(self.norm2.state_dict()) 
 
-    def forward(self, 
-                x: torch.Tensor, 
-                step: torch.Tensor.int=0, 
-                ):
+    def forward(self, x, H, W, mask=None):
+        x = x + self.drop_path(self.attn(self.norm1(x), H, W))
+        x = x + self.drop_path(self.mlp(self.norm2(x)))
+        return x
 
-        x = x + self.drop_path(self.attn(self.norm1(x),step ))
-        x = x + self.drop_path(self.mlp(self.norm2(x), step)) 
-        # print(x)             
-        return (x, step)
-
-class PatchEmbed_SIM(nn.Module):
-    
-    """ A Patch embedidng layer that embeds the Spatial Indentical Mapping (SIM) strategy.
+class PatchEmbed(nn.Module):
+    """ Image to Patch Embedding
     """
-    def __init__(self, img_size=224, patch_size=16,patch_stride=16, in_chans=3, embed_dim=768,
-                 total_aug_steps=0, lora_rank=0, pos_embed=torch.nn.Parameter, downscale=int):
+    def __init__(self, img_size=224, patch_size=16,patch_stride=16, in_chans=3, embed_dim=768):
         super().__init__()
         img_size = to_2tuple(img_size)
         patch_size = to_2tuple(patch_size)
         patch_stride = to_2tuple(patch_stride)
         self.img_size = img_size
-        self.downscale = downscale
         self.patch_shape = (img_size[0] // patch_stride[0], img_size[1] // patch_stride[1])  # could be dynamic
-        
         self.num_patches = self.patch_shape[0] * self.patch_shape[1]  # could be dynamic
         self.patch_size = patch_size
-
         self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_stride)
-        self.pos_embed = pos_embed
 
-    def duplicted_step_customized_param(self):
-        if hasattr(self, 'proj_groups'):
-            for i in range(len(self.proj_groups)):
-                self.proj_groups[i].load_state_dict(self.proj.state_dict())    
-                      
-    def forward(self, 
-                x: torch.Tensor, 
-                step: torch.Tensor.int=0,
-                **kwargs): 
+    def forward(self, x, mask=None, **kwargs):
+        # FIXME look at relaxing size constraints
+        # assert H == self.img_size[0] and W == self.img_size[1], \
+        #     f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
 
-        # if  x.requires_grad:
-        #     x=x.detach()     
-        # bs_in, c_in, h_in, w_in = x.size()
-  
-        
-        # x=F.unfold(x, kernel_size=(self.downscale, self.downscale), stride=(self.downscale, self.downscale)) # 1, 69*9, 721*1440
-        # x = x.view(c_in, -1, self.img_size[0], self.img_size[1]) # (74, 9, 721, 1440)
-        # x = x.permute(1,0,2,3)  # (9, 74, 721, 1440)
-    
-        if self.training:     
-            if not x.requires_grad:
-                x.requires_grad=True
-        
-        x = self.proj(x) #step
-        # import pdb
-        # pdb.set_trace()
-        bs_in, c_in, h_in, w_in = x.size()
-        x=F.unfold(x, kernel_size=(self.downscale, self.downscale), stride=(self.downscale, self.downscale)) # 1, 69*9, 721*1440
-        x = x.view(c_in, -1, h_in//self.downscale, w_in//self.downscale) # (74, 9, 721, 1440)
-        x = x.permute(1,0,2,3)  # (9, 74, 721, 1440)
+        x = self.proj(x)
+        Hp, Wp = x.shape[2], x.shape[3]
 
         x = x.flatten(2).transpose(1, 2)
 
-        x = x + self.pos_embed 
-        return (x, step)
+        if mask is not None:
+            mask = F.interpolate(mask[None].float(), size=(Hp, Wp)).to(torch.bool)[0]
+
+        return x, (Hp, Wp), mask
 
 
-            
 class Norm2d(nn.Module):
     def __init__(self, embed_dim):
         super().__init__()
@@ -500,60 +343,11 @@ class Norm2d(nn.Module):
         x = x.permute(0, 3, 1, 2).contiguous()
         return x
 
-class Decoder(nn.Module):
-    def __init__(self, down_linear, final, up_blocks, norm, ending_norm, patch_shape, img_size, downscale):
-        super().__init__()
-        self.norm = norm
-        self.down_linear  = down_linear
-        self.final = final
-        self.up_blocks = up_blocks
-        self.ending_norm = ending_norm
-        self.Hp,self.Wp = patch_shape
-        self.img_size = img_size
-        self.downscale = downscale
-        # self.filter = nn.Conv2d(74, 74, kernel_size=3, stride=1, padding=1)
-    def forward(self, 
-                x:torch.Tensor, 
-                step:torch.Tensor.int=0,
-                ):
-        
-        if self.ending_norm:
-            x = self.norm(x)  # b h*w c
-        x = self.down_linear(x)   
-        x = x.view(x.size(0), self.Hp, self.Wp,-1)
-        x = x.permute(0, 3, 1, 2)
 
-        bs, c, h_, w_ = x.size() #(9, 3072, 60, 120)
-        x = x.permute(1,0,2,3).contiguous().view(1, bs*c, -1) #(1, 9x3700, 60x120)
-        x=F.fold(x, 
-                 output_size=(h_*self.downscale, w_*self.downscale), 
-                 kernel_size=(self.downscale,self.downscale), 
-                 stride=(self.downscale,self.downscale)) #  torch.Size([1, 69,721*3,1440*3])    
-
-        for blk in self.up_blocks:
-            x =blk(x)
-
-
-        if  self.img_size==(721, 1440):
-            x = self.final(x)
-            # x = checkpoint( self.filter, x)          
-        else:
-            x = x.permute(0,2,3,1)
-            x = self.final(x)
-            x = rearrange(
-                x,
-                "b h w (p1 p2 c_out) -> b c_out (h p1) (w p2)",
-                p1=3, # self.patch_size[-2],
-                p2=3, # self.patch_size[-1],
-                h=self.img_size[0] // 3, # self.patch_size[-2],
-                w=self.img_size[1] // 3, # self.patch_size[-1],
-            )  
-        
-        return (x, step)
-    
-class FengWu_GHR(BaseModel):
+class ViT(BaseModel):
     """ Vision Transformer with support for patch or hybrid CNN input stage
     """
+
     def __init__(self, 
                  img_size=224, 
                  patch_size=16, 
@@ -570,85 +364,53 @@ class FengWu_GHR(BaseModel):
                  norm_layer=None, 
                  window=True,
                  use_abs_pos_emb=False, 
-                 interval=3,
+                 interval=3, 
+                 bn_group=None, 
                  test_pos_mode='simple_interpolate',
                  learnable_pos=False,
-                 rel_pos_spatial=False,
+                 rel_pos_spatial=False, 
                  lms_checkpoint_train=False,
-                 lms_checkpoint_layer_interval=1,
                  pad_attn_mask=False, 
-                 freeze_iters=0,
                  act_layer='GELU', 
                  pre_ln=False, 
                  mask_input=False, 
                  ending_norm=True,
                  round_padding=False, 
                  compat=False,
-                 total_aug_steps=0,
-                 lora_rank=16, 
-                 qkv_lora=True,
-                 mlp_lora=False, 
-                 downscale=3, 
-                 across_window_size=(60,120),
-                 lora_name = 'LinearLoraGroups',
-                 onnx_export = False
-                 ):
+                 total_aug_steps=0):
         super().__init__()
-
         self.pad_attn_mask = pad_attn_mask  # only effective for detection task input w/ NestedTensor wrapping
         self.lms_checkpoint_train = lms_checkpoint_train
-        self.lms_checkpoint_layer_interval = lms_checkpoint_layer_interval
-        self.freeze_iters = freeze_iters
         self.mask_input = mask_input
         self.ending_norm = ending_norm
         self.round_padding = round_padding
         self.patch_size = patch_size
         self.img_size = img_size
-        self.total_aug_steps = total_aug_steps
         self.depth = depth
         self.num_heads =num_heads
-        self.Hp, self.Wp = img_size[0] // patch_stride[0], img_size[1] // patch_stride[1]
+        self.in_chans = in_chans
+        self.Hp, self.Wp = 0, 0
         self.ori_Hp, self.ori_Hw = img_size[0] // patch_size[0], \
                                    img_size[1] // patch_size[1]
-        self.qkv_lora=qkv_lora
-        self.mlp_lora=mlp_lora
-        self.lora_rank=lora_rank
-        self.downscale = downscale
-        self.block_interval = interval
-        global COMPAT, ONNX_EXPORT
+        global COMPAT
         COMPAT = compat
-        ONNX_EXPORT = onnx_export
-        global FINETUNE_LINEAR        
-        if lora_name == 'LinearLoraGroups':
-            FINETUNE_LINEAR = LinearLoraGroups
-        elif lora_name == 'Linear_Head_Groups':
-            FINETUNE_LINEAR = Linear_Head_Groups
-        elif lora_name == 'Masked_Lora_Linear':
-            FINETUNE_LINEAR = Masked_Lora_Linear
-        else:
-            raise ValueError(f"{lora_name} must be 'LinearLoraGroups or Linear_Head_Groups")
-        
-            
+
         norm_layer = norm_layer or partial(nn.LayerNorm, eps=1e-6)
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
 
+        self.patch_embed = PatchEmbed(
+            img_size=img_size, patch_size=patch_size, patch_stride= patch_stride,
+            in_chans=in_chans, embed_dim=embed_dim)
+
+        num_patches = self.patch_embed.num_patches
+        
         if use_abs_pos_emb:
-            self.pos_embed = nn.Parameter(torch.zeros(1, self.Wp*self.Hp, embed_dim), requires_grad=learnable_pos)
-            pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], (self.Wp, self.Hp), cls_token=False)
+            self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, embed_dim), requires_grad=learnable_pos)
+            pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], self.patch_embed.patch_shape, cls_token=False)
 
             self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
         else:
             raise
-        
-        self.patch_embed = PatchEmbed_SIM(
-            img_size=img_size, patch_size=patch_size, patch_stride= patch_stride,
-            in_chans=in_chans, embed_dim=embed_dim, 
-            total_aug_steps=self.total_aug_steps, lora_rank = self.lora_rank, 
-            pos_embed = self.pos_embed, downscale = self.downscale)
-
-        num_patches = self.patch_embed.num_patches
-        
-
 
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
 
@@ -656,57 +418,26 @@ class FengWu_GHR(BaseModel):
         for i in range(depth):
             which_win = min(i%interval, len(window_size)-1)
             block = Block(
-                dim=embed_dim, 
-                num_heads=num_heads, 
-                mlp_ratio=mlp_ratio,
-                qkv_bias=qkv_bias,
-                drop_path=dpr[i], 
-                norm_layer=norm_layer,                
+                dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias,
+                drop_path=dpr[i], norm_layer=norm_layer,
                 window_size=window_size[which_win] if ((i + 1) % interval != 0) else self.patch_embed.patch_shape,
                 window=((i + 1) % interval != 0) if window else False,
-                act_layer=QuickGELU if act_layer == 'QuickGELU' else nn.GELU,
-                total_aug_steps =  total_aug_steps,
-                qkv_lora = self.qkv_lora,
-                mlp_lora = self.mlp_lora,
-                lora_rank=lora_rank,
-                downscale = self.downscale,
-                patch_shape = (self.Hp, self.Wp),
+                rel_pos_spatial=rel_pos_spatial,
+                act_layer=QuickGELU if act_layer == 'QuickGELU' else nn.GELU
             )
-            self.blocks.append(block)
             
-        assert window_size is not None  
-        self.blocks_hres = nn.ModuleList()
-        for i in range(depth//6): #interval):
-            block =Hres_Block(
-            dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias,
-            drop_path=dpr[i], norm_layer=norm_layer,                
-            window_size= across_window_size , 
-            window=True,
-            rel_pos_spatial=rel_pos_spatial,
-            act_layer=QuickGELU if act_layer == 'QuickGELU' else nn.GELU,
-            total_aug_steps =  total_aug_steps,
-            qkv_lora = self.qkv_lora,
-            mlp_lora = self.mlp_lora,
-            lora_rank = lora_rank,
-            downscale = self.downscale,
-            patch_shape = (self.Hp, self.Wp),
-            )
-            self.blocks_hres.append(block)
+            self.blocks.append(block)
 
         self.ln_pre = norm_layer(embed_dim) if pre_ln else nn.Identity()  # for clip model only
         self.norm = norm_layer(embed_dim)
-
         # up
         self.down_linear = nn.Linear(self.embed_dim, 1024, bias=False)
 
-        # if self.patch_size[-1] == 10:
-        #     block_out_channels= [384, 512]  #24 ,96 ,384
-        # else:
-        #     block_out_channels= [256, 384, 512]  #24 ,96 ,384
         if self.patch_size[-1] == 10:
             block_out_channels= [768, 1024]  #24 ,96 ,384
         else:
             block_out_channels= [256, 768, 1024]  #24 ,96 ,384
+
         self.up_blocks = nn.ModuleList([])
         reversed_block_out_channels = list(reversed(block_out_channels))
         output_channel = reversed_block_out_channels[0]
@@ -744,61 +475,22 @@ class FengWu_GHR(BaseModel):
 
         else:
             self.final = nn.Linear(block_out_channels[0], out_chans*ps_left*ps_left, bias=False)
-        self.decoder=Decoder(
-                            self.down_linear,
-                            self.final, 
-                            self.up_blocks,
-                            self.norm, 
-                            self.ending_norm,
-                            (self.Hp, self.Wp), 
-                            self.img_size, 
-                            self.downscale,
-                             )
-        
+
         ### duplicated init, only affects network weights and has no effect given pretrain
         self.apply(self._init_weights)
         self.fix_init_weight()
+        ###
+        self.test_pos_mode = test_pos_mode
+        # self.mask_token = nn.Parameter(torch.zeros(1, 1, embed_dim)) if self.mask_input else None
 
-
-    def duplicted_step_customized_param(self):
-        if hasattr(self, 'final_groups'):
-            for i in range(len(self.final_groups)):
-                self.final_groups[i].load_state_dict(self.final.state_dict(),strict=False) 
-                if self.final_groups[i].bias is not None:
-                    nn.init.constant_(self.final_groups[i].bias, 0)
-        if hasattr(self, 'patch_embed'):
-            self.patch_embed.duplicted_step_customized_param() 
-        
-        if hasattr(self, 'norm_groups'):
-            for i in range(len(self.norm_groups)):
-                self.norm_groups[i].load_state_dict(self.norm.state_dict())            
-        
-        for block in self.blocks:
-            block.duplicted_norm_weights()
-            
     def fix_init_weight(self):
         def rescale(param, layer_id):
             param.div_(math.sqrt(2.0 * layer_id))
-        if hasattr(self, 'input_hres'): 
-            nn.init.zeros_(self.input_hres.weight)
-        if hasattr(self, 'final_hres'): 
-            nn.init.zeros_(self.final_hres.weight)
-        
+
         for layer_id, layer in enumerate(self.blocks):
-            if isinstance(layer, Block):
-                rescale(layer.attn.proj.weight.data, layer_id + 1)
-                rescale(layer.mlp.fc2.weight.data, layer_id + 1)
- 
-        for layer_id, layer in enumerate(self.blocks_hres):
-            rescale(layer.attn_hres.proj.weight.data, layer_id + 1)
-            rescale(layer.mlp_hres.fc2.weight.data, layer_id + 1)
-            if hasattr(layer, 'mlp_hres'):
-                nn.init.constant_(layer.mlp_hres.fc2.weight.data, 0)
-                nn.init.constant_(layer.mlp_hres.fc2.bias.data, 0)
-            if hasattr(layer, 'attn_hres'): 
-                nn.init.constant_(layer.attn_hres.proj.weight, 0)    
-                nn.init.constant_(layer.attn_hres.proj.bias, 0)  
-    
+            rescale(layer.attn.proj.weight.data, layer_id + 1)
+            rescale(layer.mlp.fc2.weight.data, layer_id + 1)
+
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
             trunc_normal_(m.weight, std=.02)
@@ -817,57 +509,67 @@ class FengWu_GHR(BaseModel):
     def get_num_layers(self):
         return len(self.blocks)
 
+    def embedding_forward(self, x, mask=None, **kwargs):
 
-    def transformer_forward(self, 
-                            x: torch.Tensor, 
-                            step: torch.Tensor.int=0, 
-                            ):
-        x = (x, step)
-        for i, blk in enumerate(self.blocks):
-            if self.lms_checkpoint_train:
-                if  self.training:
-                    x = checkpoint(blk, *x)
-                else:
-                    x = blk(*x)
-            else:
-                x = blk(*x)
-            
-            if  (i+1) % 6 == 0 and self.downscale!=1: #self.block_interval == 0: # the wrong implementation is '(i+1) // self.block_interval==0' before 05/03/2024  
-                if self.lms_checkpoint_train:
-                    x = checkpoint(self.blocks_hres[i//6], *x)
-                else:
-                    x = self.blocks_hres[i//6](*x)
-        return x
+        B, C, H, W = x.shape
+        x, (self.Hp, self.Wp), mask = self.patch_embed(x, mask)
+        x = x + self.pos_embed     #get_abs_pos(pos_embed, False, (self.ori_Hp, self.ori_Hw), patch_shape)
 
-    def forward(self, 
-                x: torch.Tensor, 
-                step: torch.Tensor.int=0, 
-                **kwargs):
-        _, _, h_in, w_in = x.shape
-        
-        if h_in != self.img_size[0]*self.downscale or w_in!=self.img_size[1]*self.downscale:
-            x = F.interpolate(x.float(), 
-                              size=(self.img_size[0]*self.downscale, self.img_size[1]*self.downscale), 
-                              mode='bilinear')
-
-         #1, 69, 2160,4320
-
-        ###====================================
-        x = self.patch_embed( x, step, **kwargs)
-        x = self.transformer_forward(*x)
-        x = self.decoder(*x)[0]
-        #  ================================
-        
-        if h_in != self.img_size[0]*self.downscale or w_in!=self.img_size[1]*self.downscale:
-            x = F.interpolate(x.float(), 
-                              size=(h_in, w_in), 
-                              mode='bilinear')     
-        
         return x
     
+    def transformer_forward(self, 
+                            x: torch.Tensor, 
+                            ):
+        # x = self.ln_pre(x)  # effective for clip model only, otherwise nn.Identity
+        for i, blk in enumerate(self.blocks):
+            if self.lms_checkpoint_train:
+                if self.training:
+                    a = (x, self.Hp, self.Wp)
+                    x = checkpoint(blk, *a)
+                else:
+                    x = blk(x, self.Hp, self.Wp)
+            else:
+                x = blk(x, self.Hp, self.Wp)
+
+        return x
+    
+    def decoder_forward(self, x):
+        if self.ending_norm:
+            x = self.norm(x)  # b h*w c
+        x = self.down_linear(x)       
+        x = x.view(x.size(0), self.Hp, self.Wp,-1)
+        
+        x = x.permute(0, 3, 1, 2)
+        for blk in self.up_blocks :
+            x = checkpoint(blk, x)
+        if self.img_size==(721, 1440):
+            x = checkpoint(self.final, x)
+            return x
+        else:
+            x = self.final(x)
+            x = rearrange(
+                x,
+                "b h w (p1 p2 c_out) -> b c_out (h p1) (w p2)",
+                p1=self.patch_size[-2],
+                p2=self.patch_size[-1],
+                h=self.img_size[0] // self.patch_size[-2],
+                w=self.img_size[1] // self.patch_size[-1],
+            )
+            return x
+
+    def forward(self, x, **kwargs):
+        x = x[:, :self.in_chans, :, :]
+        x = self.embedding_forward(x, **kwargs)
+
+        x = self.transformer_forward(x)
+
+        x = self.decoder_forward(x)
+
+        return x
+
     def init_weights(self, pretrained='',):
-        from mmengine.runner.checkpoint import load_from_ceph      
-        from collections import OrderedDict     
+        from mmengine.runner.checkpoint import load_from_ceph  
+        from collections import OrderedDict      
         import os
         if len(pretrained)>0:
             Unexpected  = []
@@ -879,7 +581,7 @@ class FengWu_GHR(BaseModel):
                 for k, v in pretrained_dict.items():
                     if k[23:] in model_dict.keys() and "pos_embed" not in k:
                         pretrained_dict_filter.update({k[23:]: v})
-                        
+
             elif pretrained.endswith('.pth'):
                 if 's3:' in pretrained:
                     print(f'{self.__class__.__name__} is loading checkpoint from ceph:{pretrained}')
@@ -914,6 +616,14 @@ class FengWu_GHR(BaseModel):
 
             self.load_state_dict(pretrained_dict_filter)
 
+
+
+
+def vit_base_patch16_ema(**kwargs):
+    backbone = vit_base_patch16(**kwargs)
+    backbone.ema = [vit_base_patch16(**kwargs)]
+    backbone.ema[0].mask_input = False
+    return backbone
 
 
 class dummy_logger:
@@ -1033,6 +743,30 @@ def load_state_dict(module, state_dict, strict=False, logger=None):
     print("finish load")
 
 
+def interpolate_pos_embed(pos_embed_checkpoint, patch_shape, num_extra_tokens):
+    embedding_size = pos_embed_checkpoint.shape[-1]
+    orig_size = to_2tuple(int((pos_embed_checkpoint.shape[-2] - num_extra_tokens) ** 0.5))
+    # class_token and dist_token are kept unchanged
+    print(f"[rank {link.get_rank()}] Position interpolate from {orig_size} to {patch_shape}")
+    # only the position tokens are interpolated
+    pos_tokens = pos_embed_checkpoint[:, num_extra_tokens:] if pos_embed_checkpoint.size(0) == 1 else pos_embed_checkpoint[num_extra_tokens:]
+    pos_tokens = pos_tokens.reshape(-1, orig_size[0], orig_size[1], embedding_size).permute(0, 3, 1, 2)
+    pos_tokens = torch.nn.functional.interpolate(pos_tokens, size=patch_shape, mode='bicubic', align_corners=False)
+    new_pos_embed = pos_tokens.permute(0, 2, 3, 1).flatten(1, 2)  # (b, h*w, c)
+    return new_pos_embed
+
+
+def interpolate_pos_embed_with_cls_token(pos_embed_checkpoint, patch_shape, num_extra_tokens):
+    posemb_tok, posemb_grid = (
+        pos_embed_checkpoint[:, :num_extra_tokens],
+        pos_embed_checkpoint[0, num_extra_tokens:],
+    )
+    gs_old_h, gs_old_w = to_2tuple(int((pos_embed_checkpoint.shape[-2] - num_extra_tokens) ** 0.5))
+    posemb_grid = posemb_grid.reshape(1, gs_old_h, gs_old_w, -1).permute(0, 3, 1, 2)
+    posemb_grid = torch.nn.functional.interpolate(posemb_grid, size=patch_shape, mode='bicubic', align_corners=False)
+    posemb_grid = posemb_grid.permute(0, 2, 3, 1).reshape(1, patch_shape[0] * patch_shape[1], -1)
+    posemb = torch.cat([posemb_tok, posemb_grid], dim=1)
+    return posemb
 
 # --------------------------------------------------------
 # 2D sine-cosine position embedding
@@ -1126,7 +860,8 @@ def get_abs_pos(abs_pos, has_cls_token, ori_hw, hw):
     else:
         return abs_pos.reshape(embed_num, h*w, -1)
 
-class FengWu_Hres_Lora_v2(BaseModel):
+
+class SuperFormer_v2(BaseModel):
     def __init__(self, 
                  arch='vit_base', 
                  patch_size=(16,16),
@@ -1143,53 +878,58 @@ class FengWu_Hres_Lora_v2(BaseModel):
 
         base_default_dict =dict(
             drop_path_rate=0, use_abs_pos_emb=True,  # as in table 11
-            patch_size=patch_size, patch_stride=patch_stride, in_chans=in_chans, out_chans=out_chans, embed_dim=768, depth=12,
-            num_heads=12, mlp_ratio=4, qkv_bias=True,  
-
-            norm_layer=partial(nn.LayerNorm, eps=1e-6),
-            # learnable_pos= True,
+            patch_size=patch_size, patch_stride=patch_stride, in_chans=in_chans, out_chans=out_chans, embed_dim=768, depth=12,num_heads=12, mlp_ratio=4, qkv_bias=True,  norm_layer=partial(nn.LayerNorm,eps=1e-6), learnable_pos= True,
         )
 
         large_default_dict =dict(
             drop_path_rate=0, use_abs_pos_emb=True,  # as in table 11
-            patch_size=patch_size,patch_stride=patch_stride,in_chans=in_chans, out_chans=out_chans, embed_dim=1024,         depth=24,
-            num_heads=16, mlp_ratio=4, qkv_bias=True, 
+            patch_size=patch_size,patch_stride=patch_stride,in_chans=in_chans, out_chans=out_chans, embed_dim=1024, depth=24, num_heads=16, mlp_ratio=4, qkv_bias=True, 
             norm_layer=partial(nn.LayerNorm, eps=1e-6),
-            # learnable_pos= True,
+            learnable_pos= True,
         )
 
 
         huge_default_dict =dict(
-            drop_path_rate=0, use_abs_pos_emb=True,  # as in table 11
-            patch_size=patch_size,patch_stride=patch_stride,in_chans=in_chans, out_chans=out_chans, embed_dim=3072, depth=24,
-            num_heads=16, mlp_ratio=4, qkv_bias=True, 
-            norm_layer=partial(nn.LayerNorm, eps=1e-6),
-            # learnable_pos= True,
+            drop_path_rate=0, use_abs_pos_emb=True,
+            patch_size=patch_size, patch_stride=patch_stride, in_chans=in_chans, out_chans=out_chans, embed_dim=3072, depth=24, num_heads=16, mlp_ratio=4, qkv_bias=True,  norm_layer=partial(nn.LayerNorm, eps=1e-6),
+            learnable_pos= True,
         )
-
+        
+        B7_default_dict =dict(
+            drop_path_rate=0, use_abs_pos_emb=True,  # as in table 11
+            patch_size=patch_size,patch_stride=patch_stride,in_chans=in_chans, out_chans=out_chans, embed_dim=5120, depth=24,
+            num_heads=40, mlp_ratio=4, qkv_bias=True,  
+            norm_layer=partial(nn.LayerNorm, eps=1e-6),
+            learnable_pos= True,
+        )
+        
         B10_default_dict =dict(
             drop_path_rate=0, use_abs_pos_emb=True,  # as in table 11
             patch_size=patch_size,patch_stride=patch_stride,in_chans=in_chans, out_chans=out_chans, embed_dim=8192, depth=36,
-            num_heads=64, mlp_ratio=4, qkv_bias=True,  
+            num_heads=64, mlp_ratio=4, qkv_bias=True,   
             norm_layer=partial(nn.LayerNorm, eps=1e-6),
-            # learnable_pos= True,
+            learnable_pos= True,
         )
         
         if arch == "vit_base":
             recursive_update(base_default_dict, kwargs)
-            self.arch_net = FengWu_GHR(**base_default_dict)
+            self.arch_net = ViT(**base_default_dict)
 
         elif arch == "vit_large":
-
+            # import pdb
+            # pdb.set_trace()
             recursive_update(large_default_dict, kwargs)
-            self.arch_net = FengWu_GHR(**large_default_dict)
+            self.arch_net = ViT(**large_default_dict)
 
         elif arch == "vit_huge":
             recursive_update(huge_default_dict, kwargs)
-            self.arch_net = FengWu_GHR(**huge_default_dict)
+            self.arch_net = ViT(**huge_default_dict)
+        elif arch == "vit_7B":
+            recursive_update(B7_default_dict, kwargs)
+            self.arch_net = ViT(**B7_default_dict)
         elif arch == "vit_10B":
             recursive_update(B10_default_dict, kwargs)
-            self.arch_net = FengWu_GHR(**B10_default_dict)
+            self.arch_net = ViT(**B10_default_dict)
         else:
             raise Exception("Architecture undefined!")
 
@@ -1215,6 +955,7 @@ class FengWu_Hres_Lora_v2(BaseModel):
                 if k[9:] in model_dict.keys():
                     pretrained_dict_filter.update({k[9:]: v})
             load_state_dict(self.arch_net, pretrained_dict_filter, strict=False, logger=dummy_logger)
+
             print(
                 "Missing keys: {}".format(list(set(model_dict) - set(pretrained_dict_filter)
                                                )))
@@ -1224,9 +965,58 @@ class FengWu_Hres_Lora_v2(BaseModel):
             self.load_state_dict(model_dict)
             del pretrained_dict
 
-    def forward(self, 
-                input:torch.Tensor, 
-                step:torch.Tensor.int=0,
-                **kwargs):
-        return  self.arch_net(input, step, **kwargs)
+    def forward(self, input, step=0, **kwargs):
+        return  self.arch_net(input, **kwargs)
+
+
+
+if __name__ == '__main__':
+    # earth_patch_size_latitude((128,256), (4,4))
+    print('start')
+    patch_size=(9,8)
+    patch_stride = (8,8)
+    in_chans=71
+    out_chans=69
+    arch = 'vit_huge'
+    kwargs=dict(
+        learnable_pos= True,
+        window= True,
+        window_size = [(8, 8), (4, 16), (16, 4)],
+        drop_path_rate= 0.,
+        round_padding= True,
+        pad_attn_mask= True , # to_do: ablation
+        test_pos_mode= 'learnable_simple_interpolate', # to_do: ablation
+        lms_checkpoint_train= False,
+        img_size= (721,1440),
+        interval = 4
+
+    )
+    print('end')
+    model = SuperFormer(arch=arch,patch_size=patch_size, patch_stride=patch_stride, in_chans=in_chans,
+                           out_chans=out_chans, pretrained_model=None, kwargs=kwargs)
+    
+    from fvcore.nn.parameter_count import parameter_count_table
+    from fvcore.nn.flop_count import flop_count
+    print('end111')
+    print(parameter_count_table(model))
+    model=model.cuda()
+    dump_input = torch.rand(
+        (1, 71, 721, 1440)
+    ).cuda()
+
+    hour_time = torch.eye(4, 24).cuda()
+    month_time = torch.rand(
+        (4, 12)
+    )
+    print(flop_count(model, dump_input,))
+
+
+    input = torch.randn(1,71, 721,1440).cuda()
+    kwargs=dict(hour_label=hour_time, month_label=month_time)
+
+    out=model(input, **kwargs)
+    loss=F.mse_loss(input.detach(), out)
+    import  pdb
+    pdb.set_trace()
+    loss.backward()
 
