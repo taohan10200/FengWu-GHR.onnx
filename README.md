@@ -9,7 +9,8 @@ We now support two version of FengWu-GHR:
 | Model |Resolution | Precision | Size | Pretrained Model | Demo |
 | :-: | :-: | :-: |:-: | :-: | :-: |
 | FengWu-GHR (meta_model_0.25°)| 721x1440, 0.25°| fp16 | 9.0GB | [OneDrive](https://hkustconnect-my.sharepoint.com/:u:/g/personal/thanad_connect_ust_hk/EYY_VIxLltlMvkqG-1T6IBEBXYcPWHF5PwKrUL2TJfTt2g?e=pQbJHo) | [fengwu_ghr_inference_25km.py](./config/fengwu_ghr_inference_25km.py) |
-| FengWu-GHR (0.09° ) |  2001x4000, 0.09° | fp16 |20 GB | nwp_predictions/GHR_Checkpoint| [fengwu_ghr_cfg_74v_0.09_torch_v2.py](./config/fengwu_ghr_cfg_74v_0.09_torch_v2)|
+| FengWu-GHR (0.09° ) |  2001x4000, 0.09° | fp16 |20 GB | hdd_new:nwp_predictions/GHR_Checkpoint
+| [fengwu_ghr_cfg_74v_0.09_torch_v2.py](./config/fengwu_ghr_cfg_74v_0.09_torch_v2)|
 
 
 ## News
