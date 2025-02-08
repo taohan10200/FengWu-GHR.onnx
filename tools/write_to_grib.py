@@ -35,7 +35,8 @@ def write_grib(data_sample: Union[torch.Tensor, np.ndarray],
                filter_dict: list=['z_500','z_850', 't_500', 't_850','tp6h', 'u10', 'v10'],
                region: object = None, 
                s3_client: object=None,
-               merge_pressure_surface = True
+               merge_pressure_surface = True,
+               member=None,
                )->None:
     """
     args: 
@@ -66,209 +67,163 @@ def write_grib(data_sample: Union[torch.Tensor, np.ndarray],
                         'u10', 'v10', 't2m', 'msl']    
     """
 
-
+    """
+    Optimized function to save data as NetCDF with better speed.
+    """
     generate_time = datetime.now(pytz.UTC).strftime("%Y-%m-%d %H:%M:%S")
-    Idx2ParaName = {0: 'z500', 1:'q200', 2:'u400' }
-    
-    if isinstance(data_sample,  Dict):
-        # gt_time = str(data_sample.get('gt_time_stamp')[])
-        pred_times = list(data_sample.get('pred_label').keys())
-        pred_times.sort()
+    pred_times = list(data_sample.get('pred_label').keys())
+    pred_times.sort()
+    pressure_dict = {}
+    surface_dict = {}
+
+    for channle_id, shortName_level in channels_to_vname.items():
+        if shortName_level in filter_dict:
+            shortName, level = shortName_level.split('_') if '_' in shortName_level else (shortName_level, None)
+            if level is None:
+                if shortName not in surface_dict.keys():
+                    surface_dict.update({shortName:{'idx':[]}})
+                surface_dict[shortName]['idx'].append(channle_id)
+            else: 
+                if shortName not in pressure_dict.keys():
+                    pressure_dict.update({shortName:{'idx':[], 'level':[]}})
+                pressure_dict[shortName]['idx'].append(channle_id)
+                pressure_dict[shortName]['level'].append(float(level))  
+    initial_time = str(data_sample.get("in_time_stamp"))
+
+    for pred_time in pred_times:
+        pred = data_sample.get('pred_label').get(pred_time).squeeze(0)       # (B, C, H, W)
+        if isinstance(pred, torch.Tensor):
+            pred = pred.cpu().numpy().astype("float32")  # Convert to numpy and float32
+        _, lat_num, lon_num = pred.shape
         
-        pressure_dict = {}
-        surface_dict = {}
-
-        for channle_id, shortName_level in channels_to_vname.items():
-            if shortName_level in filter_dict:
-                shortName, level = shortName_level.split('_') if '_' in shortName_level else (shortName_level, None)
-                if level is None:
-                    if shortName not in surface_dict.keys():
-                        surface_dict.update({shortName:{'idx':[]}})
-                    surface_dict[shortName]['idx'].append(channle_id)
-                else: 
-                    if shortName not in pressure_dict.keys():
-                        pressure_dict.update({shortName:{'idx':[], 'level':[]}})
-                    pressure_dict[shortName]['idx'].append(channle_id)
-                    pressure_dict[shortName]['level'].append(float(level))  
-        initial_time = str(data_sample.get("in_time_stamp"))
-
-        for pred_time in pred_times:
-            pred = data_sample.get('pred_label').get(pred_time).squeeze(0)       # (B, C, H, W)
-            if isinstance(pred, torch.Tensor):
-                pred = pred.cpu().numpy() 
-            _, lat_num, lon_num = pred.shape
-            
-            gt = None
-            if 'gt_label' in data_sample.keys():
-                if pred_time in data_sample.get('gt_label').keys():
-                    gt = data_sample.get('gt_label').get(pred_time).clone().cpu().numpy()  
-      
-            # ========================== surface prediction=========================
-            ds = xr.Dataset(
-                {
-                    ShortName: xr.DataArray(
-                        data=pred[V['idx']][None],
-                        dims=['time', 'isobaricInhPa', 'latitude', 'longitude'],
-                        attrs={'units': grib_para[ShortName]['Unit'],
-                            'GRIB_shortName': ShortName}
-                        ) for ShortName, V in pressure_dict.items()
-                                            
-                    },
-                coords={
-                        'time':xr.DataArray([0],  # the lead time since  the time in attrs
-                                            dims='time',
-                                            attrs={"units": f"hours since {pred_time}"}
-                                            ),
-                        'isobaricInhPa': xr.DataArray(pressure_dict[next(iter(pressure_dict))]['level'], #list 
-                                                    dims='isobaricInhPa',
-                                                    attrs={
-                                                            "units": "hPa", 
-                                                            "long_name":"pressure",
-                                                            "positive": "down",
-                                                            "stored_direction":  "decreasing",
-                                                            "standard_name": "air_pressure",
-                                                            }
-                                                ),
-                        'latitude': xr.DataArray(np.linspace(90., -90., lat_num), 
-                                                dims='latitude',
-                                                attrs={"units": "degrees_north", 
-                                                        'stored_direction': 'decreasing'}
-                                                ),
-                        'longitude':xr.DataArray(np.linspace(0., 360., lon_num, endpoint=False), 
-                                                dims='longitude',
-                                                attrs={"units": "degrees_east"}
-                                                ),
-
-                        },
-                attrs={
-                    "GRIB_edition": 2,
-                    "description": "Prediction of AI-based NWP model: FengWu-GHR",
-                    "institution": "Shanghai Ailab",
-                    "contact": "Tao Han@hantao10200@gmail.com",
-                    "initial_time": f'Initiai filed time: {initial_time}',
-                    "history": f"First generate at:{generate_time}"
-                    }
-                )
-            os.makedirs(f'{save_root}/{initial_time}/', exist_ok=True)
-            save_path = f'{save_root}/{initial_time}/{pred_time}_pressure.grib'
-            if region:
-                ds = ds.sel(latitude=slice(region['lat'][0], region['lat'][1]), longitude=slice(region['lon'][0],region['lon'][1]))
-            # to_grib(ds, save_path)
- 
-            ds.to_netcdf(save_path.replace('grib', 'nc'))
-           
-            if s3_client is not None:
-                s3_uri=f'{save_root}/{initial_time[:4]}/{initial_time}/{pred_time}.nc'
-                s3_client.write_nc_from_BytesIO(ds, s3_uri=s3_uri)
-                print(f'upload the {s3_uri} to ceph!!!!')
-                
-            # ========================== surface prediction=========================
-
-            ds = xr.Dataset(
-                {
-                ShortName: xr.DataArray(
-                        data=pred[V['idx']],
-                        dims=['time',  'latitude', 'longitude'],
-                        attrs={'units': grib_para[ShortName]['Unit'],
-                            'GRIB_shortName': ShortName}
-                        ) for ShortName, V in surface_dict.items()
-                                            
-                    },
-                coords={
-                        'time':xr.DataArray([0],  # the lead time since  the time in attrs
-                                            dims='time',
-                                            attrs={"units": f"hours since {pred_time}"}
-                                            ),
+        gt = None
+        if 'gt_label' in data_sample.keys():
+            if pred_time in data_sample.get('gt_label').keys():
+                gt = data_sample.get('gt_label').get(pred_time).clone().cpu().numpy()  
     
-                        'latitude': xr.DataArray(np.linspace(90., -90., lat_num), 
-                                                dims='latitude',
-                                                attrs={"units": "degrees_north", 
-                                                        'stored_direction': 'decreasing'}
-                                                ),
-                        'longitude':xr.DataArray(np.linspace(0., 360., lon_num, endpoint=False), 
-                                                dims='longitude',
-                                                attrs={"units": "degrees_east"}
-                                                ),
-
-                        },
-                attrs={
-                    "GRIB_edition": 2,
-                    "description": "Prediction of AI-based NWP model: FengWu-GHR",
-                    "institution": "Shanghai Ailab",
-                    "contact": "Tao Han@hantao10200@gmail.com",
-                    "initial_time": f'Initiai filed time: {initial_time}',
-                    "history": f"First generate at:{generate_time}"
-                    }
-                )
-            os.makedirs(f'{save_root}/{initial_time}/', exist_ok=True)
-            save_path = f'{save_root}/{initial_time}/{pred_time}_surface.grib'
-            # to_grib(ds, save_path)
-            if region is not None:
-                ds = ds.sel(latitude=slice(region['lat'][0], region['lat'][1]), longitude=slice(region['lon'][0],region['lon'][1] ))   
-            ds.to_netcdf(save_path.replace('grib', 'nc'))
-            
-            if s3_client is not None:
-                s3_uri= f'{save_root}/single/{initial_time[:4]}/{initial_time}/{pred_time}.nc'
-                s3_client.write_nc_from_BytesIO(ds, s3_uri = s3_uri)
-                print(f'upload the {s3_uri} to ceph!!!!')
-                
-            del data_sample.get('pred_label')[pred_time]
-    else:
-        if isinstance(data_samples, torch.Tensor):
-            data_samples = data_samples.numpy()
-            
-        v_num, times, level_num, lat_num, lon_num = data_samples.shape
-
-        ds_surface = xr.Dataset(
+        # ========================== surface prediction=========================
+        ds = xr.Dataset(
             {
-                ShortName[0]: xr.DataArray(
-                    data=data_samples[idx],
+                ShortName: xr.DataArray(
+                    data=pred[V['idx']][None],
                     dims=['time', 'isobaricInhPa', 'latitude', 'longitude'],
                     attrs={'units': grib_para[ShortName]['Unit'],
-                            'GRIB_shortName': ShortName}
-                    ) for idx, ShortName in Idx2ParaName.items()
-                                            
+                        'GRIB_shortName': ShortName}
+                    ) for ShortName, V in pressure_dict.items()
+                                        
                 },
             coords={
-                    'time':xr.DataArray([1],  # the lead time since  the time in attrs
+                    'time':xr.DataArray([0],  # the lead time since  the time in attrs
                                         dims='time',
-                                        attrs={"units": "hours since 2022-01-01T01"}
+                                        attrs={"units": f"hours since {pred_time}"}
                                         ),
-                    'isobaricInhPa': xr.DataArray([500.0, 200.0, 400.0], 
-                                                    dims='isobaricInhPa',
-                                                    attrs={
+                    'isobaricInhPa': xr.DataArray(pressure_dict[next(iter(pressure_dict))]['level'], #list 
+                                                dims='isobaricInhPa',
+                                                attrs={
                                                         "units": "hPa", 
                                                         "long_name":"pressure",
                                                         "positive": "down",
                                                         "stored_direction":  "decreasing",
                                                         "standard_name": "air_pressure",
                                                         }
-                                                ),
+                                            ),
                     'latitude': xr.DataArray(np.linspace(90., -90., lat_num), 
-                                                dims='latitude',
-                                                attrs={"units": "degrees_north", 
+                                            dims='latitude',
+                                            attrs={"units": "degrees_north", 
                                                     'stored_direction': 'decreasing'}
-                                                ),
+                                            ),
                     'longitude':xr.DataArray(np.linspace(0., 360., lon_num, endpoint=False), 
-                                                dims='longitude',
-                                                attrs={"units": "degrees_east"}
-                                                ),
+                                            dims='longitude',
+                                            attrs={"units": "degrees_east"}
+                                            ),
 
                     },
             attrs={
                 "GRIB_edition": 2,
-                "description": "Forecasts of AI-based NWP model: FengWu-GHR",
-                "institution": "Shanghai AILab",
+                "description": "Prediction of AI-based NWP model: FengWu-GHR",
+                "institution": "Shanghai Ailab",
                 "contact": "Tao Han@hantao10200@gmail.com",
+                "initial_time": f'Initiai filed time: {initial_time}',
                 "history": f"First generate at:{generate_time}"
-            }
+                }
             )
+        
+        os.makedirs(f'{save_root}/{initial_time}/', exist_ok=True)
+        if member is not None:
+            save_path = f'{save_root}/{initial_time}/{pred_time}_pressure_{member}.grib'
+        else:
+            save_path = f'{save_root}/{initial_time}/{pred_time}_pressure.grib'
+        if region:
+            ds = ds.sel(latitude=slice(region['lat'][0], region['lat'][1]), longitude=slice(region['lon'][0],region['lon'][1]))
+        # to_grib(ds, save_path)
+
+        ds.to_netcdf(save_path.replace('grib', 'nc'))
+        
+        if s3_client is not None:
+            s3_uri=f'{save_root}/{initial_time[:4]}/{initial_time}/{pred_time}.nc'
+            s3_client.write_nc_from_BytesIO(ds, s3_uri=s3_uri)
+            print(f'upload the {s3_uri} to ceph!!!!')
+            
+        # ========================== surface prediction=========================
+
+        ds = xr.Dataset(
+            {
+            ShortName: xr.DataArray(
+                    data=pred[V['idx']],
+                    dims=['time',  'latitude', 'longitude'],
+                    attrs={'units': grib_para[ShortName]['Unit'],
+                        'GRIB_shortName': ShortName}
+                    ) for ShortName, V in surface_dict.items()
+                                        
+                },
+            coords={
+                    'time':xr.DataArray([0],  # the lead time since  the time in attrs
+                                        dims='time',
+                                        attrs={"units": f"hours since {pred_time}"}
+                                        ),
+
+                    'latitude': xr.DataArray(np.linspace(90., -90., lat_num), 
+                                            dims='latitude',
+                                            attrs={"units": "degrees_north", 
+                                                    'stored_direction': 'decreasing'}
+                                            ),
+                    'longitude':xr.DataArray(np.linspace(0., 360., lon_num, endpoint=False), 
+                                            dims='longitude',
+                                            attrs={"units": "degrees_east"}
+                                            ),
+
+                    },
+            attrs={
+                "GRIB_edition": 2,
+                "description": "Prediction of AI-based NWP model: FengWu-GHR",
+                "institution": "Shanghai Ailab",
+                "contact": "Tao Han@hantao10200@gmail.com",
+                "initial_time": f'Initiai filed time: {initial_time}',
+                "history": f"First generate at:{generate_time}"
+                }
+            )
+        os.makedirs(f'{save_root}/{initial_time}/', exist_ok=True)
+        if member is not None:
+            save_path = f'{save_root}/{initial_time}/{pred_time}_surface_{member}.grib'
+        else: 
+            save_path = f'{save_root}/{initial_time}/{pred_time}_surface.grib'
+        # to_grib(ds, save_path)
         if region is not None:
-            ds_surface = ds_surface.sel(latitude=slice(region['lat'][0], region['lat'][1]), longitude=slice(region['lon'][0],region['lon'][1] ))   
-        if save_path.endswith('nc'): 
-            ds_surface.to_netcdf(save_path)
-        elif save_path.endswith('grib'): 
-            to_grib(ds_surface, save_path)
+            ds = ds.sel(latitude=slice(region['lat'][0], region['lat'][1]), longitude=slice(region['lon'][0],region['lon'][1] ))   
+
+        ds.to_netcdf(save_path.replace('grib', 'nc'))
+        
+        if s3_client is not None:
+            s3_uri= f'{save_root}/single/{initial_time[:4]}/{initial_time}/{pred_time}.nc'
+            s3_client.write_nc_from_BytesIO(ds, s3_uri = s3_uri)
+            print(f'upload the {s3_uri} to ceph!!!!')
+            
+        del data_sample.get('pred_label')[pred_time]
+    
+        # if save_path.endswith('nc'): 
+        #     ds_surface.to_netcdf(save_path)
+        # elif save_path.endswith('grib'): 
+        #     to_grib(ds_surface, save_path)
              
 if __name__ == "__main__":
     data = torch.rand(3,1,3,720,1440)
