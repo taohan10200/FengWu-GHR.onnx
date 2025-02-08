@@ -1,20 +1,23 @@
-# FengWu-GHR onnx
+# 🌟 **FengWu-GHR: Kilometer-scale Medium-range Global Weather Forecasting**
 
-!!! Note: Open source is not easy, please star to show support.
-## :rocket: Reading paper first:
-###  FengWu-GHR: Learning the Kilometer-scale Medium-range Global Weather Forecasting, arXiv preprint: 2402.00059, 2023. https://arxiv.org/abs/2402.00059.
+> **Open source is not easy, please star ⭐ to show your support!**
+
+---
+
+## 🚀 **Paper**
+**Title:**  
+[FengWu-GHR: Learning the Kilometer-scale Medium-range Global Weather Forecasting](https://arxiv.org/abs/2402.00059)  
 
 We now support two version of FengWu-GHR:
 
 | Model |Resolution | Precision | Size | Pretrained Model | Demo |
 | :-: | :-: | :-: |:-: | :-: | :-: |
 | FengWu-GHR (meta_model_0.25°)| 721x1440, 0.25°| fp16 | 9.0GB | [OneDrive](https://hkustconnect-my.sharepoint.com/:u:/g/personal/thanad_connect_ust_hk/EYY_VIxLltlMvkqG-1T6IBEBXYcPWHF5PwKrUL2TJfTt2g?e=pQbJHo) | [fengwu_ghr_inference_25km.py](./config/fengwu_ghr_inference_25km.py) |
-| FengWu-GHR (0.09° ) |  2001x4000, 0.09° | fp16 |20 GB | hdd_new:nwp_predictions/GHR_Checkpoint
-| [fengwu_ghr_cfg_74v_0.09_torch_v2.py](./config/fengwu_ghr_cfg_74v_0.09_torch_v2)|
+| FengWu-GHR (0.09° ) |  2001x4000, 0.09° | fp16 |20 GB | hdd_new:nwp_predictions/GHR_Checkpoint| [fengwu_ghr_cfg_74v_0.09_torch_v2.py](./config/fengwu_ghr_cfg_74v_0.09_torch_v2)|
 
 
 ## News
-2024/09/03 Fix the checkerboard effect (caused by a wrong implementation during the exporting of onnx):
+2024/09/03 Fix the checkerboard effect in fengwu_ghr_v2 :star:
 
 2024/07/12 add FengWu-GHR (full model) onnx-fp16 model :star:
 
@@ -23,12 +26,11 @@ We now support two version of FengWu-GHR:
 2024/03/22 init project :star:
 
 
-## Features
-
-* Release FengWu-GHR onnx models (Meta model-only) and their onnxruntime standalone demo
-* No `torch` required
-* Using memory pool to dynimically dispatch merory, allowing running on small GPU memory or CUP-only devices 
-* Support device: 16 GB CPU laptop/PC (very slow :turtle:) or Nvidia GPU (GPU>=20GB for meta model and GPU>50GB for GHR_0.09) 
+## 📌 **Highlights**
+- 🌍 **Kilometer-scale resolution**: First global weather forecasting model at **0.09°**.
+- ⚡ **Novel Approach**: Leverages a pretrained low-resolution model to achieve high-resolution forecasts.
+- 📊 **Real-world performance**: Excels in both station observations and extreme event scenarios.
+ 
 
 ## Getting started
 ### 1. Clone the code and prepare environment (if necessary) using the following command:
