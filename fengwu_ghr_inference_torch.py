@@ -43,7 +43,6 @@ class FengWu_GHR_Inference:
         if cfg.fp16:
             self.model.half()
 
-
         self.level_mapping =  [cfg.total_levels.index(val) for val in cfg.pressure_level if val in cfg.total_levels ]
         self.mean, self.std = self.get_mean_std() #read the channel-wise mean and std according to the defined variable in configuration.
         self.mean = torch.tensor(self.mean[None,:,None,None]).to(self.device)
@@ -53,16 +52,23 @@ class FengWu_GHR_Inference:
                 
         self.input_shape = cfg.input_shape
         self.load_data_from_ceph = s3_client() if s3_client else None
+        
     def load_state_dict(self):
-        pretrained_dict = torch.load(self.cfg.checkpoint_dir, map_location='cpu'
-                                )['state_dict']
+        if self.cfg.checkpoint_dir.endswith('.pth'):
+            pretrained_dict = torch.load(self.cfg.checkpoint_dir, map_location='cpu'
+                                    )['state_dict']
+
+        elif self.cfg.checkpoint_dir.endswith('.pt'):
+            pretrained_dict = torch.load(self.cfg.checkpoint_dir, map_location='cpu')['module']
+        else:
+            raise ValueError("Unsupported checkpoint format. Please use .pth or .pt files.")
         model_dict = self.model.state_dict()
 
         pretrained_dict_filter = OrderedDict() 
         for k, v in pretrained_dict.items():
             if k[9:] in model_dict.keys():
-                # if 'mlp_hres' not in k:
                 pretrained_dict_filter.update({k[9:]: v})
+        
         # Find missing keys in the model's state_dict
         missing_keys = [k for k in model_dict.keys() if k not in pretrained_dict_filter]
         
@@ -74,7 +80,6 @@ class FengWu_GHR_Inference:
         model_dict.update(pretrained_dict_filter)
 
         self.model.load_state_dict(pretrained_dict_filter, strict=False)
-        
         
     def get_mean_std(self):
         with open('./nwp_models/mean_std.json',mode='r') as f:
@@ -112,6 +117,7 @@ class FengWu_GHR_Inference:
         Returns:
             outputs: 
         """
+    
         if self.dataset == 'era5':
             inputs = self.read_era5_initial_field(timestamp) #4D input: [batch_size, vname_number, H, W]
         else:
@@ -142,36 +148,31 @@ class FengWu_GHR_Inference:
                 outputs = self.model(x['input'], step = 0)#x['step'])
            
             et1 = time.time()
+            print(f'Step: {step}, Initial T: {in_time_stamp}, forecast T: {timestamp}, inference speed: {(et1-st):.2f}s')
+            
             new_dt = datetime.fromisoformat(timestamp) + timedelta(hours=6)
             timestamp = new_dt.isoformat()
             
             outputs_ = self.de_normalization(outputs.clone().float())
             
-            print(f'Step: {step}, Initial T: {in_time_stamp}, forecast T: {timestamp}, inference speed: {(et1-st):.2f}s')
-
-
             datasample = {
                             'pred_label':{timestamp:self.process_output(outputs_)},
                             'in_time_stamp':in_time_stamp
                           }
-
-            et2 = time.time()
-
-            print(f' Post processing time is: {(et2-et1):.2f}s')
-            
          
             write_grib(datasample, 
                     save_root = self.output_root, 
                     channels_to_vname=self.channels_to_vname, 
                     filter_dict = self.cfg.save_cfg.variables_list,
                     region = self.cfg.save_cfg.region if 'region' in self.cfg.save_cfg else None)
-        
+            et2 = time.time()
             print(f' forecasts are saved at {self.output_root} with nc format , save time is: {(et2-et1):.2f}s')
 
     
     def read_era5_initial_field(self, timestamp):
         input_initial_field=[]
         try:
+            
             pressure_data = xr.open_dataset(f'./data/input/era5/{timestamp[:4]}/{timestamp}_pressure.nc', 
                                         engine='netcdf4',
                       )
@@ -185,7 +186,7 @@ class FengWu_GHR_Inference:
         for vname in self.cfg.vnames.get('pressure'):
             vname_data = pressure_data[vname]
             for height in self.cfg.pressure_level:
-                vdata = vname_data.sel(level=height).data
+                vdata = vname_data.sel(pressure_level=height).data
                 vdata = vdata.squeeze() if vdata.ndim>=3 else vdata
                 vdata = torch.tensor(vdata[None,None,:,:]).to(self.device)
                 vdata = self.check_input(vdata)
