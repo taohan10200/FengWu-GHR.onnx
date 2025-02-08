@@ -1,9 +1,10 @@
-checkpoint_dir = 'onnx/74v_1step/iter_19000.pth'
+version = 'v2'
+checkpoint_dir = 'onnx/88v_analysis/mp_rank_00_model_states_88v.pt' #'onnx/88v_era5/iter_300000.pth' #'onnx/88v_1step/iter_4000.pth'
 onnx_keys = ['encoder'] + [f'block_{i}' for i in range(0,30)]  + ['decoder'] #['encoder'] + 
 
-fp16 = True          #'enable fp16 inference, default True.'
+fp16 = False          #'enable fp16 inference, default True.'
 dataset = 'analysis'
-input_shape =  (721, 1440) # the initialized data is required to have a shape with 721*3 x 1440*3 for each variable 
+input_shape =  (721*3, 1440*3) # the initialized data is required to have a shape with 721*3 x 1440*3 for each variable 
 
 total_levels= [1000.,  975.,  950.,  925.,  900.,  875.,  850.,  825.,  800.,
  775.,  750.,  700.,  650.,  600.,  550.,  500.,  450.,  400.,
@@ -12,21 +13,22 @@ total_levels= [1000.,  975.,  950.,  925.,  900.,  875.,  850.,  825.,  800.,
  1.]
 
 vnames=dict(
-    pressure=['z','q', 'u', 'v', 't'],
-    single=['v10','u10','v100', 'u100', 't2m','tcc', 'sp','tp6h', 'msl']) #'tisr',
+    pressure=['z','q', 'u', 'v', 't','w'],
+    single=['v10','u10','v100', 'u100', 't2m','tcc', 'sp','msl','tp6h','ssr6h']) #'tisr',
+
 
 inference_steps = 60 # one step is 6 hour interval
 
 backbone=dict(
     arch = 'vit_huge',
-    patch_size=(13,12),
-    patch_stride =(12,12),
-    in_chans=74,
-    out_chans=74,
+    patch_size=(13, 12),
+    patch_stride =(12, 12),
+    in_chans=88,
+    out_chans=88,
     kwargs=dict(
         learnable_pos= True,
         window= True,
-        window_size = [(10, 10), (5, 20), (20, 5)],
+        window_size = [(30, 30), (20, 40), (40, 20)],
         across_window_size = (60, 120), # which is associated with downscale
         interval=4,
         drop_path_rate= 0.,
@@ -36,13 +38,13 @@ backbone=dict(
         lms_checkpoint_train= True,
         lms_checkpoint_layer_interval=1,
         img_size= (721,1440),
-        downscale=1,
-        total_aug_steps = 2,
+        downscale=3,
+        total_aug_steps = 1,
         qkv_lora=True,
         mlp_lora=True,
         lora_rank=16,
         # lora_name = 'Masked_Lora_Linear',
-    ),        
+    ),    
     )
 
 
@@ -62,5 +64,6 @@ save_cfg = dict(
 'u_1000','u_925','u_850','u_700','u_600','u_500','u_400','u_300','u_250','u_200','u_150','u_100','u_50',
 'v_1000','v_925','v_850','v_700','v_600','v_500','v_400','v_300','v_250','v_200','v_150','v_100','v_50',
 't_1000','t_925','t_850','t_700','t_600','t_500','t_400','t_300','t_250','t_200','t_150','t_100','t_50',
-'v10','u10','v100', 'u100', 't2m','tcc', 'sp','tp6h', 'msl']
+'v10','u10','v100', 'u100', 't2m','tcc', 'sp','tp6h', 'msl'],
+    # region = dict(lat=(55, 15),lon=(74, 136)),
     )

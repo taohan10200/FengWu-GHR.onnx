@@ -1,5 +1,5 @@
 version = 'v2'
-checkpoint_dir = 'onnx/74v_1step/iter_40000.pth'
+checkpoint_dir = 'onnx/74v_1step/iter_49000.pth'
 onnx_keys = ['encoder'] + [f'block_{i}' for i in range(0,30)]  + ['decoder'] #['encoder'] + 
 
 fp16 = False          #'enable fp16 inference, default True.'
@@ -64,5 +64,5 @@ save_cfg = dict(
 'v_1000','v_925','v_850','v_700','v_600','v_500','v_400','v_300','v_250','v_200','v_150','v_100','v_50',
 't_1000','t_925','t_850','t_700','t_600','t_500','t_400','t_300','t_250','t_200','t_150','t_100','t_50',
 'v10','u10','v100', 'u100', 't2m','tcc', 'sp','tp6h', 'msl'],
-    region = dict(lat=(55, 15),lon=(74, 136)),
+    # region = dict(lat=(55, 15),lon=(74, 136)),
     )
