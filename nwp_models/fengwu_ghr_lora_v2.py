@@ -116,11 +116,10 @@ class Attention(nn.Module):
         self.scale = head_dim ** -0.5
         if qkv_lora:
             self.qkv = FINETUNE_LINEAR(dim, dim * 3, lora_rank,total_aug_steps=total_aug_steps,bias=qkv_bias) 
-            self.proj =FINETUNE_LINEAR(dim, dim,lora_rank,total_aug_steps=total_aug_steps) #nn.Linear(dim, dim)
         else:
             self.qkv=nn.Linear(dim, dim * 3, bias=qkv_bias)
             self.proj=nn.Linear(dim, dim)
-            
+        self.proj =FINETUNE_LINEAR(dim, dim,lora_rank,total_aug_steps=total_aug_steps) #nn.Linear(dim, dim)     
         self.window_size = window_size
 
     def forward(self, 
@@ -130,20 +129,20 @@ class Attention(nn.Module):
         B, N, C = x.shape
 
         if ONNX_EXPORT:
-            qkv = self.qkv(x,step).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+            qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
             q, k, v = qkv.unbind(0) # make torchscript happy (cannot use tensor as tuple)   --> (batchsize, heads, len, head_dim)
             attn = ((q * self.scale) @ k.transpose(-2, -1))
             attn = torch.softmax(attn, dim=-1)
             x = (attn @ v).transpose(1, 2).reshape(B, N, C)
         # =====================================
         else:   
-            qkv = self.qkv(x,step).reshape(B, N, 3, self.num_heads, C // self.num_heads)
+            qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads)
             data_type = qkv.dtype
             qkv=qkv.to(torch.float16) 
             x = flash_attn_qkvpacked_func(qkv, dropout_p=0.0, softmax_scale=self.scale, causal=False).reshape(B, N, C)    
             x=x.to(data_type)
 
-        x = self.proj(x,step)
+        x = self.proj(x, step)
         return x
 
 
@@ -245,11 +244,10 @@ class WindowAttention(nn.Module):
 
         if qkv_lora:
             self.qkv = FINETUNE_LINEAR(dim, dim*3,lora_rank,total_aug_steps=total_aug_steps, bias=qkv_bias) 
-            self.proj = FINETUNE_LINEAR(dim, dim,lora_rank, total_aug_steps=total_aug_steps) 
         else:
             self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
             self.proj = nn.Linear(dim, dim)
-        
+        self.proj = FINETUNE_LINEAR(dim, dim,lora_rank, total_aug_steps=total_aug_steps) 
     def forward(self, 
                 x: torch.tensor, 
                 step: torch.Tensor.int = 0
@@ -278,14 +276,14 @@ class WindowAttention(nn.Module):
         N_w = x.shape[1]
         
         if  ONNX_EXPORT:
-            qkv = self.qkv(x,step).reshape(B_w, N_w, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+            qkv = self.qkv(x).reshape(B_w, N_w, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
             q, k, v = qkv.unbind(0)  #  --> (batchsize, heads, len, head_dim)
             attn = ((q * self.scale) @ k.transpose(-2, -1))
             attn = attn.softmax(dim=-1)
             x = (attn @ v).transpose(1, 2).reshape(B_w, N_w, C)
         #=====================================
         else:
-            qkv = self.qkv(x,step).reshape(B_w, N_w, 3, self.num_heads, C // self.num_heads)
+            qkv = self.qkv(x).reshape(B_w, N_w, 3, self.num_heads, C // self.num_heads)
             data_type = qkv.dtype
             qkv=qkv.to(torch.float16) 
             x = flash_attn_qkvpacked_func(qkv,dropout_p=0.0, softmax_scale=self.scale, causal=False).reshape(B_w, N_w, C)          
