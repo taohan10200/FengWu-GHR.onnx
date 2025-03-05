@@ -2,7 +2,7 @@ version = 'v2'
 checkpoint_dir = 'onnx/88v_analysis/mp_rank_00_model_states_88v.pt' #'onnx/88v_era5/iter_300000.pth' #'onnx/88v_1step/iter_4000.pth'
 onnx_keys = ['encoder'] + [f'block_{i}' for i in range(0,30)]  + ['decoder'] #['encoder'] + 
 
-fp16 = False          #'enable fp16 inference, default True.'
+fp16 = True          #'enable fp16 inference, default True.'
 dataset = 'analysis'
 input_shape =  (721*3, 1440*3) # the initialized data is required to have a shape with 721*3 x 1440*3 for each variable 
 
