@@ -1,18 +1,19 @@
 # Copyright (c) Tao Han: hantao10200@gmail.com. All rights reserved.
 import os
 import argparse
+import time
 import json
 import torch
 import numpy as np
 import xarray as xr
+import pandas as pd
+import torch.nn.functional as F
 from loguru import logger
+from datetime import datetime
 from mmengine.config import Config, DictAction
 from datetime import datetime, timedelta
 from tools.write_to_grib import write_grib
 from scipy.ndimage import zoom
-import torch.nn.functional as F
-import pandas as pd
-import time
 from nwp_models.fengwu_ghr_lora_v1 import FengWu_Hres_Lora_v1
 from nwp_models.fengwu_ghr_lora_v2 import FengWu_Hres_Lora_v2
 from collections import OrderedDict
@@ -20,6 +21,20 @@ try:
     from nwp.datasets.s3_client import s3_client
 except:
     s3_client = None
+# Get the current time and format it as the log file name
+current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+log_file_name = f"logs/log_{current_time}.log"
+
+# Configure the logger to write logs to a dynamically named file
+logger.add(
+    log_file_name,  # Set the dynamically generated log file name
+    rotation="10 MB",  # Limit each log file to 10 MB, create a new file if exceeded
+    retention="10 days",  # Keep log files for up to 10 days
+    encoding="utf-8",  # Use UTF-8 encoding for the log file
+    level="INFO",  # Set the logging level to INFO
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}"  # Define the log message format
+)
+
 class FengWu_GHR_Inference:
     def __init__(self, cfg: dict = {}):
         self.cfg = cfg
@@ -73,7 +88,7 @@ class FengWu_GHR_Inference:
         missing_keys = [k for k in model_dict.keys() if k not in pretrained_dict_filter]
         
         # Output missing keys
-        print("Missing keys in pretrained_dict_filter:")
+        logger.info("Missing keys in pretrained_dict_filter:")
         for key in missing_keys:
             print(key)
             
@@ -127,7 +142,7 @@ class FengWu_GHR_Inference:
         in_time_stamp = timestamp
         
         datasample_initial = {
-                     'pred_label':{in_time_stamp:self.de_normalization(inputs.clone().float())},
+                     'pred_label':{in_time_stamp:self.de_normalization(inputs.clone().float()).cpu().numpy()},
                      'in_time_stamp':in_time_stamp
                     }
         write_grib(datasample_initial, 
@@ -137,8 +152,8 @@ class FengWu_GHR_Inference:
                    region = self.cfg.save_cfg.region if 'region' in self.cfg.save_cfg else None)
  
         for step in range(self.cfg.inference_steps):   
-            if self.cfg.fp16:
-                outputs = self.convert_to_fp16(outputs)
+            # if self.cfg.fp16:
+            #     outputs = self.convert_to_fp16(outputs)
             
             x = {'input':outputs, 
                  'step': np.array(step, dtype=np.int64)}
@@ -146,14 +161,15 @@ class FengWu_GHR_Inference:
             st = time.time()
             with torch.no_grad():
                 outputs = self.model(x['input'], step = 0)#x['step'])
-           
+            torch.cuda.empty_cache()   
+                     
             et1 = time.time()
             print(f'Step: {step}, Initial T: {in_time_stamp}, forecast T: {timestamp}, inference speed: {(et1-st):.2f}s')
             
             new_dt = datetime.fromisoformat(timestamp) + timedelta(hours=6)
             timestamp = new_dt.isoformat()
             
-            outputs_ = self.de_normalization(outputs.clone().float())
+            outputs_ = self.de_normalization(outputs.clone().float()).cpu().numpy()
             
             datasample = {
                             'pred_label':{timestamp:self.process_output(outputs_)},
@@ -270,12 +286,13 @@ class FengWu_GHR_Inference:
             return filtered_tensor
         
         # outputs_ = apply_gaussian_filter(outputs_, sigma=0.5) #1.5
-        no_less_than_zero = ['tp6h']
+        no_less_than_zero = ['tp6h', 'ssr']
         for i in no_less_than_zero:
-            idx = self.vname_to_channels.get(i)
-            outputs_[:, idx, :, :][outputs_[:, idx, :, :] < 0] = 0
+            idx = self.vname_to_channels.get(i, None)
+            if idx is not None:
+                outputs_[:, idx, :, :][outputs_[:, idx, :, :] < 0] = 0
             
-        outputs_ = F.interpolate(outputs_, size=(2001, 4000))
+        # outputs_ = F.interpolate(outputs_, size=(2001, 4000))
         return outputs_
     
     def normalization(self, data):
@@ -369,8 +386,8 @@ def parse_timestamp(value):
 def main():
     args = parse_args()
     if args.gpu is not None:
-        os.environ['CUDA_VISIABLE']=str(args.gpu)
-
+        os.environ['CUDA_VISIBLE_DEVICES']=str(args.gpu)
+    logger.info(f"Using GPU: {os.environ['CUDA_VISIBLE_DEVICES']}")
     cfg = Config.fromfile(args.config)
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
