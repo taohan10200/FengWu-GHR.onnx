@@ -1,197 +1,233 @@
 import os
+import argparse
 import importlib.util
 import sys
-if importlib.util.find_spec("mmengine") is not None and sys.version_info >= (2, 0):
-    from mmengine import Config, DictAction
-else:
-    from mmcv import Config, DictAction
-import argparse
 import cdsapi
 import urllib3
 from concurrent.futures import ThreadPoolExecutor, as_completed
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-import  pandas as pd
-import copy
 from datetime import datetime, timedelta
+import pandas as pd
+import copy
 import xarray as xr
-class era5_downloader():
-    def __init__(self, config):
-        self.cfg = Config.fromfile(config)
-        self.proxies = self.env_seting()
-        self.ecmwf_dataset_pressure = 'reanalysis-era5-pressure-levels'
-        self.ecmwf_dataset_single = 'reanalysis-era5-single-levels'
 
-        self.local_root = self.cfg.storage.local
-        print(self.cfg)
-        self.cdsapi_client = cdsapi.Client(url=os.environ.get("CDSAPI_URL"),
-                                            key=os.environ.get("CDSAPI_KEY"))
-        self.cdsapi_client.session.proxies.update(self.proxies)
-        self.pressure_request_dic=copy.deepcopy(self.cfg.pressure_request_dic)
-        self.single_request_dic=copy.deepcopy(self.cfg.single_request_dic)    
-        
-    def save(self, time_required, file_key):
-        prefix, extension=os.path.splitext(file_key)
-
-        request_dic =copy.deepcopy(self.pressure_request_dic)
-        request_dic.update(time_required)
-         
-        file_name = f'{prefix}_pressure{extension}'
-        print(f'File is saved to {file_name}')
-        
-        if self.check_filesize(request_dic, self.ecmwf_dataset_pressure, file_name) is False:
-            print("{} does not been completely downloaded, "
-                  "I would like to download {} again !!!".format(file_name, file_name))
-        
-            dir = os.path.dirname(file_name)
-            if os.path.exists(dir) is not  True:
-                os.makedirs(dir)
-
-            self.cdsapi_client.retrieve(self.ecmwf_dataset_pressure, request_dic, file_name)
-             
-            self.save(time_required, file_key)
-        else:
-            print("{} has been fully downloaded, No need to down it again !!!".format(file_key))
-
-        
-        request_dic =copy.deepcopy(self.single_request_dic)
-        request_dic.update(time_required)        
-        file_name = f'{prefix}_single{extension}'
-        print(f'File is saved to {file_name}') 
-      
-        # if self.check_filesize(request_dic, self.ecmwf_dataset_single, file_name) is False:
-            # print("{} does not been completely downloaded, "
-                #   "I would like to download it again !!!".format(file_key))
-        self.cdsapi_client.retrieve(self.ecmwf_dataset_single, request_dic, file_name)
+# Disable HTTPS warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
-            
-        start_time  = datetime.strptime(f"{time_required['year']}-{time_required['month']}-{time_required['day']} {time_required['time']}", "%Y-%m-%d %H:%M:%S")
-
-        request_dic.update({'variable':['total_precipitation']})
-        import pdb
-        pdb.set_trace()
-        ds = xr.open_dataset(f"{prefix}_single{extension}", engine='netcdf4')
-
-        tp_list = [ds["tp"].copy()]
-        for i in range(1,6):
-            time_require = str(start_time-timedelta(hours=i))
-            yy, mm, dd, hh = self.get_yy_mm_dd_hh(time_require)
-            tp_time_required=dict(year = yy, month = mm, day = dd, time = hh)
-
-            request_dic.update(tp_time_required)  
-            tp_file_name = file_name.replace('single', f'tp{i}h')
-            if self.check_filesize(request_dic, self.ecmwf_dataset_single, tp_file_name) is False:
-                self.cdsapi_client.retrieve(self.ecmwf_dataset_single, request_dic, tp_file_name)
-            ds1 = xr.open_dataset(tp_file_name)
-            tp_list.append(ds1["tp"].copy())
-
-            os.remove(tp_file_name)          
- 
-        combined_tp = xr.concat(tp_list, dim="time")
-        summarized_tp = combined_tp.sum(dim="time")
-
-        combined_dataset = ds.copy()
-        combined_dataset = combined_dataset.assign(tp=summarized_tp)
-        
-        combined_dataset = combined_dataset.rename({'tp': 'tp6h'})
-        combined_dataset.to_netcdf(f"{prefix}_single{extension}")
-        
-        return True
-
-
-    def check_filesize(self, request_dic, ecmwf_dataset, file_path):
-        exist_size=0
-
-        if not os.path.exists(file_path):
-            exist_size = 0
-        else:
-            exist_size = os.path.getsize(file_path)
-    
-        remote_size = self.cdsapi_client.retrieve(ecmwf_dataset,
-                                                    request_dic,).content_length  # 文件下载器
-
-        if remote_size == exist_size:
-            print("{} is complete, remote vs local size: {}=={}"
-                  .format(file_path, remote_size, exist_size))
-            return  True
-        else:
-            print("{} is not complete, remote vs local size: {}!={}"
-                  .format(file_path, remote_size, exist_size))
-            return False
-
-
-    def env_seting(self):
-        os.environ['CDSAPI_URL'] = 'https://cds.climate.copernicus.eu/api'
-        os.environ['CDSAPI_KEY'] = 'ea3a2607-158c-48a4-bd27-b255256b2759'
-        
-        if self.cfg.proxy.type=='direct':
-            proxies = {}
-            print('you does not use any proxy !!!!')
-
-        elif  self.cfg.proxy.type=='normal':
-            proxies = dict(http=self.cfg.proxy.normal,
-                 https=self.cfg.proxy.normal)
-
-        elif self.cfg.proxy.type=='special':
-            proxies = dict(http=self.cfg.proxy.special,
-                                https=self.cfg.proxy.special)
-            print("i am using a special proxy of %s" % self.cfg.proxy.special)
-
-        else:
-            raise  ValueError("proxy type must be 'direct', 'normal' or 'special' !!!! ")
-        
-        return proxies
-    def get_yy_mm_dd_hh(self, time_stamp):
-        time_stamp =  pd.to_datetime(time_stamp)
-        print(time_stamp)
-        yy = str(time_stamp.year).zfill(4)
-        mm = str(time_stamp.month).zfill(2)
-        dd = str(time_stamp.day).zfill(2)
-        hh=str(time_stamp).split(' ')[-1]
-        return yy, mm, dd, hh
-    
-    def get_from_timestamp(self,
-                           time_stamp:str, 
-                           local_root=None):
-        yy, mm, dd, hh_mm_ss = self.get_yy_mm_dd_hh(time_stamp)
-        time_required=dict(year = yy,month = mm, day = dd, time = hh_mm_ss)
-        local_root = local_root or self.local_root
-        file_path = f'{local_root}/{yy}/{time_stamp}.nc'
-      
-        self.save(time_required, file_path)
-
-        
-        
-def formatSize(bytes,format='GB'):
+def format_size(bytes, unit='GB'):
+    """Format file size in KB, MB, or GB"""
     try:
         bytes = float(bytes)
         kb = bytes / 1024
-    except:
-        print("The bytes is not correct")
+    except ValueError:
+        print("The 'bytes' parameter is not valid")
         return "Error"
 
-    if format=="GB":
-        return kb/1024/1024
-    if format=="MB":
-        return kb/1024
-    
-if __name__ =="__main__":
-    local_root= './data/input/era5'
+    if unit == "GB":
+        return kb / 1024 / 1024
+    elif unit == "MB":
+        return kb / 1024
+    else:
+        return kb
 
-    parser = argparse.ArgumentParser(description='Interp station')
-    parser.add_argument('--st', type=str, help='initial timestamp')
-    parser.add_argument('--et', type=str, default='',  help='initial timestamp')
-    parser.add_argument('--local_root', type=str, help='the path to save the era5 data')
+
+class ERA5Downloader:
+    """
+    ERA5 data downloader class.
+    Handles downloading, saving, and processing data from the Copernicus Climate Data Store (CDS).
+    """
+
+    def __init__(self, config_path):
+        # Dynamically load configuration file
+        if importlib.util.find_spec("mmengine") is not None and sys.version_info >= (3, 0):
+            from mmengine import Config
+        else:
+            from mmcv import Config
+
+        self.cfg = Config.fromfile(config_path)
+        self.proxies = self._setup_environment()
+
+        self.local_root = self.cfg.storage.local
+        self.ecmwf_dataset_pressure = 'reanalysis-era5-pressure-levels'
+        self.ecmwf_dataset_single = 'reanalysis-era5-single-levels'
+
+        # Initialize CDSAPI client
+        self.cdsapi_client = cdsapi.Client(
+            url=os.environ.get("CDSAPI_URL"),
+            key=os.environ.get("CDSAPI_KEY")
+        )
+        self.cdsapi_client.session.proxies.update(self.proxies)
+
+        # Configure request dictionaries
+        self.pressure_request_dic = copy.deepcopy(self.cfg.pressure_request_dic)
+        self.single_request_dic = copy.deepcopy(self.cfg.single_request_dic)
+        self.accumulation_request_dic = copy.deepcopy(self.cfg.accumulation_request_dic)
+    def _setup_environment(self):
+        """
+        Set up the environment variables and proxy settings.
+        """
+        os.environ['CDSAPI_URL'] = 'https://cds.climate.copernicus.eu/api'
+        os.environ['CDSAPI_KEY'] = 'ea3a2607-158c-48a4-bd27-b255256b2759'
+
+        proxy_type = self.cfg.proxy.type
+
+        if proxy_type == 'direct':
+            print('No proxy is used.')
+            return {}
+
+        elif proxy_type == 'normal':
+            print(f'Using normal proxy: {self.cfg.proxy.normal}')
+            return dict(http=self.cfg.proxy.normal, https=self.cfg.proxy.normal)
+
+        elif proxy_type == 'special':
+            print(f'Using special proxy: {self.cfg.proxy.special}')
+            return dict(http=self.cfg.proxy.special, https=self.cfg.proxy.special)
+
+        else:
+            raise ValueError("Proxy type must be 'direct', 'normal', or 'special'.")
+
+    def save(self, time_required, file_key):
+        """
+        Save ERA5 data by downloading pressure-level and single-level datasets.
+        """
+        prefix, extension = os.path.splitext(file_key)
+
+        # Download pressure-level data
+        request_dic = copy.deepcopy(self.pressure_request_dic)
+        request_dic.update(time_required)
+        pressure_file = f'{prefix}_pressure{extension}'
+
+        print(f'Checking and downloading pressure file: {pressure_file}')
+        if not self._check_filesize(request_dic, self.ecmwf_dataset_pressure, pressure_file):
+            self._download_file(self.ecmwf_dataset_pressure, request_dic, pressure_file)
+
+        # Download single-level data
+        request_dic = copy.deepcopy(self.single_request_dic)
+        request_dic.update(time_required)
+        single_file = f'{prefix}_single_base{extension}'
+
+        print(f'Checking and downloading single file: {single_file}')
+        if not self._check_filesize(request_dic, self.ecmwf_dataset_single, single_file):
+            self._download_file(self.ecmwf_dataset_single, request_dic, single_file)
+
+        # Process time-series data
+        start_time = datetime.strptime(
+            f"{time_required['year']}-{time_required['month']}-{time_required['day']} {time_required['time']}",
+            "%Y-%m-%d %H:%M:%S"
+        )
+        ds_base = xr.open_dataset(single_file, engine='netcdf4')
+        ds_base.load()
+        os.remove(single_file)
+
+        # Download accumulation data
+        request_dic = copy.deepcopy(self.accumulation_request_dic)
+        request_dic.update(time_required)
+
+        ds_acc = self._process_time_series(start_time, request_dic, prefix, extension)
     
+        
+        # Merge the datasets
+        ds_acc = ds_acc.rename({"tp": "tp6h"})
+        ds_acc = ds_acc.rename({"ssr": "ssr6h"})
+        # import pdb
+        # pdb.set_trace()    
+        ds = xr.merge([ds_base, ds_acc])
+        ds.to_netcdf(f"{prefix}_single{extension}")
+        
+    def _process_time_series(self, start_time, request_dic, prefix, extension):
+        """
+        Process time-series data by downloading additional time offsets and calculating summaries.
+        """
+        acc_list = []
+        for i in range(0, 6):
+            time_offset = start_time - timedelta(hours=i)
+            yy, mm, dd, hh = self._get_ymdh(time_offset)
+
+            past_time_required = dict(year=yy, month=mm, day=dd, time=hh)
+            request_dic.update(past_time_required)
+
+            temp_file = f"{prefix}_acc{i}h{extension}"
+            if not self._check_filesize(request_dic, self.ecmwf_dataset_single, temp_file):
+                self._download_file(self.ecmwf_dataset_single, request_dic, temp_file)
+
+            ds_temp = xr.open_dataset(
+                    temp_file,
+                    engine="netcdf4",
+                )
+            #load to memory 
+            ds_temp.load()
+            acc_list.append(ds_temp.copy())
+           
+            os.remove(temp_file)
+        # [print(i['ssr'].data.mean()) for i in acc_list]
+        # import pdb
+        # pdb.set_trace()    
+        assert "valid_time" in  ds_temp.keys()
+        combined_acc = xr.concat(acc_list, dim="valid_time")
+        summarized_acc = combined_acc.sum(dim="valid_time")
+        return summarized_acc
+
+    def _download_file(self, dataset, request_dic, file_name):
+        """
+        Download a file from the CDSAPI.
+        """
+        os.makedirs(os.path.dirname(file_name), exist_ok=True)
+        self.cdsapi_client.retrieve(dataset, request_dic, file_name)
+
+    def _check_filesize(self, request_dic, dataset, file_name):
+        """
+        Check if the local file size matches the remote file size.
+        """
+        local_size = os.path.getsize(file_name) if os.path.exists(file_name) else 0
+        remote_size = self.cdsapi_client.retrieve(dataset, request_dic).content_length
+
+        if local_size == remote_size:
+            print(f"File {file_name} is complete: {local_size} bytes.")
+            return True
+        else:
+            print(f"File {file_name} is incomplete: {local_size} != {remote_size}.")
+            return False
+
+    @staticmethod
+    def _get_ymdh(timestamp):
+        """
+        Get year, month, day, and hour from a timestamp.
+        """
+        timestamp = pd.to_datetime(timestamp)
+        return (str(timestamp.year).zfill(4),
+                str(timestamp.month).zfill(2),
+                str(timestamp.day).zfill(2),
+                str(timestamp).split(' ')[-1])
+
+    def get_from_timestamp(self, time_stamp, local_root=None):
+        """
+        Download data for a specific timestamp.
+        """
+        yy, mm, dd, hh = self._get_ymdh(time_stamp)
+        time_required = dict(year=yy, month=mm, day=dd, time=hh)
+        local_root = local_root or self.local_root
+        time_stamp = str(time_stamp).replace(' ', 'T')
+        file_path = f"{local_root}/{yy}/{time_stamp}.nc"
+
+
+        self.save(time_required, file_path)
+
+
+if __name__ == "__main__":
+    # Command-line argument parser
+    parser = argparse.ArgumentParser(description="ERA5 Data Downloader")
+    parser.add_argument('--st', type=str, required=True, help='Start timestamp (ISO format: YYYY-MM-DD HH:MM:SS)')
+    parser.add_argument('--et', type=str, default='', help='End timestamp (ISO format: YYYY-MM-DD HH:MM:SS)')
+    parser.add_argument('--local_root', type=str, default='./data/input/era5', help='Path to save the ERA5 data')
     args = parser.parse_args()
 
+    # Initialize ERA5Downloader with configuration
+    downloader = ERA5Downloader('config/era5_config.py')
 
-    from era5_downloader import era5_downloader
-    ERA5_data = era5_downloader('config/era5_config.py')
-    
-    if len(args.et)==0:
-        args.et=args.st
-    time_stamps = pd.date_range(start=args.st, end=args.et, freq='6H')
-    for i in time_stamps:
-     data = ERA5_data.get_from_timestamp(time_stamp=i,
-                                        local_root=args.local_root)
+    # Define time range for data downloads
+    end_time = args.et or args.st
+    time_stamps = pd.date_range(start=args.st, end=end_time, freq='6H')
+
+    # Download data for each timestamp
+    for timestamp in time_stamps:
+        downloader.get_from_timestamp(time_stamp=timestamp, local_root=args.local_root)
