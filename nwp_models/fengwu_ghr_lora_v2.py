@@ -25,7 +25,7 @@ from timm.models.layers import drop_path, to_2tuple, trunc_normal_
 from nwp.registry import MODELS
 from mmengine.model import BaseModel
 from flash_attn import flash_attn_qkvpacked_func, flash_attn_func
-from .lora import LinearLoraGroups, Linear_Head_Groups, Masked_Lora_Linear
+from .lora import Linear_Uncertainty, Linear_Lora_Groups
 from diffusers.models.unets.unet_2d_blocks import get_up_block
 
 class DropPath(nn.Module):
@@ -119,12 +119,13 @@ class Attention(nn.Module):
         else:
             self.qkv=nn.Linear(dim, dim * 3, bias=qkv_bias)
             self.proj=nn.Linear(dim, dim)
-        self.proj =FINETUNE_LINEAR(dim, dim,lora_rank,total_aug_steps=total_aug_steps) #nn.Linear(dim, dim)     
+        self.proj =LINEAR_UNCETAINTY(dim, dim,lora_rank,total_aug_steps=total_aug_steps) 
         self.window_size = window_size
 
     def forward(self, 
                 x: torch.Tensor,
-                step: torch.Tensor.int=0
+                step: torch.Tensor.int=0,
+                ens: bool=False,
                 ):
         B, N, C = x.shape
 
@@ -142,7 +143,7 @@ class Attention(nn.Module):
             x = flash_attn_qkvpacked_func(qkv, dropout_p=0.0, softmax_scale=self.scale, causal=False).reshape(B, N, C)    
             x=x.to(data_type)
 
-        x = self.proj(x, step)
+        x = self.proj(x, ens)
         return x
 
 
@@ -247,10 +248,11 @@ class WindowAttention(nn.Module):
         else:
             self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
             self.proj = nn.Linear(dim, dim)
-        self.proj = FINETUNE_LINEAR(dim, dim,lora_rank, total_aug_steps=total_aug_steps) 
+        self.proj = LINEAR_UNCETAINTY(dim, dim,lora_rank, total_aug_steps=total_aug_steps) 
     def forward(self, 
                 x: torch.tensor, 
-                step: torch.Tensor.int = 0
+                step: torch.Tensor.int = 0,
+                ens: bool=False, 
                 ):
         """ Forward function.
         Args:
@@ -289,7 +291,7 @@ class WindowAttention(nn.Module):
             x = flash_attn_qkvpacked_func(qkv,dropout_p=0.0, softmax_scale=self.scale, causal=False).reshape(B_w, N_w, C)          
             x=x.to(data_type)
         # ===========================================  
-        x = self.proj(x,step)
+        x = self.proj(x,ens)
 
         x = x.view(-1, self.window_size[1], self.window_size[0], C)
         x = window_reverse(x, self.window_size, Hp, Wp)  # B H' W' C
@@ -341,6 +343,7 @@ class Hres_Block(nn.Module):
     def forward(self, 
                 x: torch.Tensor, 
                 step: torch.Tensor.int=0,
+                ens: bool=False,
                 ):
        # the embedded self-attention first flattens multi batches of one input to a single two-dimension token and then implements window self-attention. 
 
@@ -359,7 +362,7 @@ class Hres_Block(nn.Module):
         x = x.flatten(2).transpose(1, 2) #(1,180*360, 3072)
         
 
-        x = x + self.drop_path(self.attn_hres(self.norm1_hres(x), step ))
+        x = x + self.drop_path(self.attn_hres(self.norm1_hres(x), step, ens ))
         x = x + self.drop_path(self.mlp_hres(self.norm2_hres(x), step))
         
         
@@ -422,9 +425,10 @@ class Block(nn.Module):
     def forward(self, 
                 x: torch.Tensor, 
                 step: torch.Tensor.int=0, 
+                ens: bool=False, 
                 ):
 
-        x = x + self.drop_path(self.attn(self.norm1(x),step ))
+        x = x + self.drop_path(self.attn(self.norm1(x),step, ens ))
         x = x + self.drop_path(self.mlp(self.norm2(x), step)) 
         # print(x)             
         return (x, step)
@@ -434,7 +438,7 @@ class PatchEmbed_SIM(nn.Module):
     """ A Patch embedidng layer that embeds the Spatial Indentical Mapping (SIM) strategy.
     """
     def __init__(self, img_size=224, patch_size=16,patch_stride=16, in_chans=3, embed_dim=768,
-                 total_aug_steps=0, lora_rank=0, pos_embed=torch.nn.Parameter, downscale=int):
+                 total_aug_steps=0, lora_rank=0, downscale=int):
         super().__init__()
         img_size = to_2tuple(img_size)
         patch_size = to_2tuple(patch_size)
@@ -447,7 +451,6 @@ class PatchEmbed_SIM(nn.Module):
         self.patch_size = patch_size
 
         self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_stride)
-        self.pos_embed = pos_embed
 
     def duplicted_step_customized_param(self):
         if hasattr(self, 'proj_groups'):
@@ -459,31 +462,18 @@ class PatchEmbed_SIM(nn.Module):
                 step: torch.Tensor.int=0,
                 **kwargs): 
 
-        # if  x.requires_grad:
-        #     x=x.detach()     
-        # bs_in, c_in, h_in, w_in = x.size()
-  
-        
         # x=F.unfold(x, kernel_size=(self.downscale, self.downscale), stride=(self.downscale, self.downscale)) # 1, 69*9, 721*1440
         # x = x.view(c_in, -1, self.img_size[0], self.img_size[1]) # (74, 9, 721, 1440)
         # x = x.permute(1,0,2,3)  # (9, 74, 721, 1440)
     
-        if self.training:     
-            if not x.requires_grad:
-                x.requires_grad=True
-        
         x = self.proj(x) #step
-        # import pdb
-        # pdb.set_trace()
         bs_in, c_in, h_in, w_in = x.size()
         x=F.unfold(x, kernel_size=(self.downscale, self.downscale), stride=(self.downscale, self.downscale)) # 1, 69*9, 721*1440
         x = x.view(c_in, -1, h_in//self.downscale, w_in//self.downscale) # (74, 9, 721, 1440)
         x = x.permute(1,0,2,3)  # (9, 74, 721, 1440)
-
+        
         x = x.flatten(2).transpose(1, 2)
-
-        x = x + self.pos_embed 
-        return (x, step)
+        return x
 
 
             
@@ -498,57 +488,6 @@ class Norm2d(nn.Module):
         x = x.permute(0, 3, 1, 2).contiguous()
         return x
 
-class Decoder(nn.Module):
-    def __init__(self, down_linear, final, up_blocks, norm, ending_norm, patch_shape, img_size, downscale):
-        super().__init__()
-        self.norm = norm
-        self.down_linear  = down_linear
-        self.final = final
-        self.up_blocks = up_blocks
-        self.ending_norm = ending_norm
-        self.Hp,self.Wp = patch_shape
-        self.img_size = img_size
-        self.downscale = downscale
-        # self.filter = nn.Conv2d(74, 74, kernel_size=3, stride=1, padding=1)
-    def forward(self, 
-                x:torch.Tensor, 
-                step:torch.Tensor.int=0,
-                ):
-        
-        if self.ending_norm:
-            x = self.norm(x)  # b h*w c
-        x = self.down_linear(x)   
-        x = x.view(x.size(0), self.Hp, self.Wp,-1)
-        x = x.permute(0, 3, 1, 2)
-
-        bs, c, h_, w_ = x.size() #(9, 3072, 60, 120)
-        x = x.permute(1,0,2,3).contiguous().view(1, bs*c, -1) #(1, 9x3700, 60x120)
-        x=F.fold(x, 
-                 output_size=(h_*self.downscale, w_*self.downscale), 
-                 kernel_size=(self.downscale,self.downscale), 
-                 stride=(self.downscale,self.downscale)) #  torch.Size([1, 69,721*3,1440*3])    
-
-        for blk in self.up_blocks:
-            x =blk(x)
-
-
-        if  self.img_size==(721, 1440):
-            x = self.final(x)
-            # x = checkpoint( self.filter, x)          
-        else:
-            x = x.permute(0,2,3,1)
-            x = self.final(x)
-            x = rearrange(
-                x,
-                "b h w (p1 p2 c_out) -> b c_out (h p1) (w p2)",
-                p1=3, # self.patch_size[-2],
-                p2=3, # self.patch_size[-1],
-                h=self.img_size[0] // 3, # self.patch_size[-2],
-                w=self.img_size[1] // 3, # self.patch_size[-1],
-            )  
-        
-        return (x, step)
-    
 class FengWu_GHR(BaseModel):
     """ Vision Transformer with support for patch or hybrid CNN input stage
     """
@@ -616,17 +555,10 @@ class FengWu_GHR(BaseModel):
         global COMPAT, ONNX_EXPORT
         COMPAT = compat
         ONNX_EXPORT = onnx_export
-        global FINETUNE_LINEAR        
-        if lora_name == 'LinearLoraGroups':
-            FINETUNE_LINEAR = LinearLoraGroups
-        elif lora_name == 'Linear_Head_Groups':
-            FINETUNE_LINEAR = Linear_Head_Groups
-        elif lora_name == 'Masked_Lora_Linear':
-            FINETUNE_LINEAR = Masked_Lora_Linear
-        else:
-            raise ValueError(f"{lora_name} must be 'LinearLoraGroups or Linear_Head_Groups")
-        
-            
+        global FINETUNE_LINEAR, LINEAR_UNCETAINTY     
+
+        FINETUNE_LINEAR = Linear_Lora_Groups
+        LINEAR_UNCETAINTY = Linear_Uncertainty        
         norm_layer = norm_layer or partial(nn.LayerNorm, eps=1e-6)
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
 
@@ -642,7 +574,7 @@ class FengWu_GHR(BaseModel):
             img_size=img_size, patch_size=patch_size, patch_stride= patch_stride,
             in_chans=in_chans, embed_dim=embed_dim, 
             total_aug_steps=self.total_aug_steps, lora_rank = self.lora_rank, 
-            pos_embed = self.pos_embed, downscale = self.downscale)
+            downscale = self.downscale)
 
         num_patches = self.patch_embed.num_patches
         
@@ -742,17 +674,7 @@ class FengWu_GHR(BaseModel):
 
         else:
             self.final = nn.Linear(block_out_channels[0], out_chans*ps_left*ps_left, bias=False)
-        self.decoder=Decoder(
-                            self.down_linear,
-                            self.final, 
-                            self.up_blocks,
-                            self.norm, 
-                            self.ending_norm,
-                            (self.Hp, self.Wp), 
-                            self.img_size, 
-                            self.downscale,
-                             )
-        
+
         ### duplicated init, only affects network weights and has no effect given pretrain
         self.apply(self._init_weights)
         self.fix_init_weight()
@@ -806,21 +728,16 @@ class FengWu_GHR(BaseModel):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    @staticmethod
-    def _normalization(x):
-        assert len(x.shape) == 4
-        x = x.sub(torch.tensor([123.675, 116.280, 103.530]).view(1, 3, 1, 1).cuda()).div(torch.tensor([58.395, 57.120, 57.375]).view(1, 3, 1, 1).cuda())
-        return x
-
     def get_num_layers(self):
         return len(self.blocks)
 
 
     def transformer_forward(self, 
                             x: torch.Tensor, 
-                            step: torch.Tensor.int=0, 
+                            step: torch.Tensor.int=0,
+                            ens: bool=False, 
                             ):
-        x = (x, step)
+        x = (x, step, ens)
         for i, blk in enumerate(self.blocks):
             if self.lms_checkpoint_train:
                 if  self.training:
@@ -830,7 +747,7 @@ class FengWu_GHR(BaseModel):
             else:
                 x = blk(*x)
             
-            if  (i+1) % 6 == 0 and self.downscale!=1: #self.block_interval == 0: # the wrong implementation is '(i+1) // self.block_interval==0' before 05/03/2024  
+            if  i % 6 == 0 and self.downscale!=1: #self.block_interval == 0: # the wrong implementation is '(i+1) // self.block_interval==0' before 05/03/2024  
                 if self.lms_checkpoint_train:
                     x = checkpoint(self.blocks_hres[i//6], *x)
                 else:
@@ -840,6 +757,7 @@ class FengWu_GHR(BaseModel):
     def forward(self, 
                 x: torch.Tensor, 
                 step: torch.Tensor.int=0, 
+                ens: bool=False,
                 **kwargs):
         _, _, h_in, w_in = x.shape
         
@@ -847,19 +765,61 @@ class FengWu_GHR(BaseModel):
             x = F.interpolate(x.float(), 
                               size=(self.img_size[0]*self.downscale, self.img_size[1]*self.downscale), 
                               mode='bilinear')
-
+        if self.training:
+            x.requires_grad=True
          #1, 69, 2160,4320
-
+        x = x.to(torch.float16)
         ###====================================
-        x = self.patch_embed( x, step, **kwargs)
-        x = self.transformer_forward(*x)
-        x = self.decoder(*x)[0]
+        x = self.patch_embed( x, **kwargs)
+        x = x + self.pos_embed
+        x = (x, step, ens)
+        x = self.transformer_forward(*x)[0]
+        ###======================================
+        # decoding Process
+        if self.ending_norm:
+            x = self.norm(x)  # b h*w c
+        x = self.down_linear(x)   
+        x = x.view(x.size(0), self.Hp, self.Wp,-1)
+        x = x.permute(0, 3, 1, 2)
+
+        bs, c, h_, w_ = x.size() #(9, 3072, 60, 120)
+        x = x.permute(1,0,2,3).contiguous().view(1, bs*c, -1) #(1, 9x3700, 60x120)
+        x=F.fold(x, 
+                 output_size=(h_*self.downscale, w_*self.downscale), 
+                 kernel_size=(self.downscale,self.downscale), 
+                 stride=(self.downscale,self.downscale)) #  torch.Size([1, 69,721*3,1440*3])    
+
+        for blk in self.up_blocks :
+            x = checkpoint(blk, x)
+        # bs, c, h_, w_ = x.size() #(9, 3072, 60, 120)
+        # x = x.permute(1,0,2,3).contiguous().view(1, bs*c, -1) #(1, 9x3700, 60x120)
+        # x=F.fold(x, 
+        #          output_size=(h_*self.downscale, w_*self.downscale), 
+        #          kernel_size=(self.downscale,self.downscale), 
+        #          stride=(self.downscale,self.downscale)) #  torch.Size([1, 69,721*3,1440*3])    
+
+        if  self.img_size==(721, 1440):
+            x = checkpoint( self.final, x)
+            # x = checkpoint( self.filter, x)          
+        else:
+            x = x.permute(0,2,3,1)
+            x = self.final(x)
+            x = rearrange(
+                x,
+                "b h w (p1 p2 c_out) -> b c_out (h p1) (w p2)",
+                p1=3, # self.patch_size[-2],
+                p2=3, # self.patch_size[-1],
+                h=self.img_size[0] // 3, # self.patch_size[-2],
+                w=self.img_size[1] // 3, # self.patch_size[-1],
+            )  
+        
         #  ================================
         
         if h_in != self.img_size[0]*self.downscale or w_in!=self.img_size[1]*self.downscale:
             x = F.interpolate(x.float(), 
                               size=(h_in, w_in), 
                               mode='bilinear')     
+        
         
         return x
     
@@ -938,12 +898,6 @@ def load_checkpoint(model, state_dict, load_pos_embed, strict=False, logger=None
     Returns:
         dict or OrderedDict: The loaded checkpoint.
     """
-    # checkpoint = _load_checkpoint(filename, map_location)
-    # OrderedDict is a subclass of dict
-    # if not isinstance(checkpoint, dict):
-    #     raise RuntimeError(
-    #         f'No state_dict found in checkpoint file {filename}')
-    # get state_dict from checkpoint
     if 'pos_embed' in state_dict:
         if load_pos_embed:
             state_dict['pos_embed'] = interpolate_pos_embed(pos_embed_checkpoint=state_dict['pos_embed'],
@@ -1199,14 +1153,6 @@ class FengWu_Hres_Lora_v2(BaseModel):
         if finetune_model is not None:
             import io
             pretrained_dict = torch.load(finetune_model, map_location='cpu')['state_dict']
-            # with open(pretrained_model, 'rb') as f:
-            #     buffer = io.BytesIO(f.read())
-            # checkpoint = torch.load(buffer)
-            # checkpoint = clip_checkpoint_preprocess(checkpoint)
-
-            # load while interpolates position embedding
-            # import pdb
-            # pdb.set_trace()
             model_dict = self.state_dict()
             pretrained_dict_filter ={}
             for k, v in pretrained_dict.items():
@@ -1225,6 +1171,7 @@ class FengWu_Hres_Lora_v2(BaseModel):
     def forward(self, 
                 input:torch.Tensor, 
                 step:torch.Tensor.int=0,
+                ens: bool=False,
                 **kwargs):
-        return  self.arch_net(input, step, **kwargs)
+        return  self.arch_net(input, step, ens, **kwargs)
 
